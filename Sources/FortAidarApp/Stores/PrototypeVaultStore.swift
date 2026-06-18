@@ -25,7 +25,9 @@ final class PrototypeVaultStore: ObservableObject {
     let vaultDogBridge = VaultDogBridge()
 
     private let keychain = BiometricVaultSecretStore()
+    private let audit = AuditLogWriter()
     private var mountPoint: URL?
+    private var auditSessionID: String?
 
     var selectedIdentity: VaultIdentity {
         identities.first { $0.id == selectedIdentityID } ?? identities[0]
@@ -33,6 +35,10 @@ final class PrototypeVaultStore: ObservableObject {
 
     private var runtime: PrototypeVaultRuntime {
         PrototypeVaultRuntime(identity: selectedIdentity)
+    }
+
+    private var auditMountState: AuditMountState {
+        mountPoint == nil ? .unmounted : .mounted
     }
 
     var vaultPathText: String {
@@ -106,6 +112,7 @@ final class PrototypeVaultStore: ObservableObject {
         mountPoint = nil
         items = []
         appendEvent("Identity selected", "\(selectedIdentity.displayName) (\(selectedIdentityKindText))")
+        audit.log(.identitySwitch, outcome: .allow, requester: selectedIdentity.id, target: "identity/\(selectedIdentity.id)", mountState: .unmounted, sessionID: nil)
 
         Task { await refresh() }
     }
@@ -148,10 +155,12 @@ final class PrototypeVaultStore: ObservableObject {
             state = .working("Authenticating")
             let secret = try keychain.readPassphrase(for: selectedIdentity)
             appendEvent("Authenticated", "Keychain released the vault secret for \(selectedIdentity.displayName).")
+            audit.log(.biometricAuth, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: nil)
             await createOrUnlock(passphrase: secret, shouldSaveSecret: false)
         } catch {
             state = runtime.vaultExists() ? .locked : .missing
             appendEvent("Touch ID failed", error.localizedDescription)
+            audit.log(.biometricAuth, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: nil)
         }
     }
 
@@ -181,23 +190,40 @@ final class PrototypeVaultStore: ObservableObject {
 
     private func createOrUnlock(passphrase: String, shouldSaveSecret: Bool) async {
         let enteredPassphrase = passphrase
+        let requester = selectedIdentity.id
+        let target = selectedIdentity.vaultRelativePath
 
         do {
             if !runtime.vaultExists() {
                 state = .working("Creating encrypted vault")
                 appendEvent("Creating vault", "Building encrypted sparsebundle for \(selectedIdentity.displayName).")
-                try await runtime.createVault(passphrase: enteredPassphrase)
+                do {
+                    try await runtime.createVault(passphrase: enteredPassphrase)
+                } catch {
+                    audit.log(.vaultCreate, outcome: .error, requester: requester, target: target, mountState: .unmounted, sessionID: nil)
+                    throw error
+                }
                 appendEvent("Vault created", runtime.vaultPath.path)
+                audit.log(.vaultCreate, outcome: .allow, requester: requester, target: target, mountState: .unmounted, sessionID: nil)
             }
 
             state = .working("Unlocking vault")
-            let mountedAt = try await runtime.unlock(passphrase: enteredPassphrase)
+            let sessionID = UUID().uuidString
+            let mountedAt: URL
+            do {
+                mountedAt = try await runtime.unlock(passphrase: enteredPassphrase)
+            } catch {
+                audit.log(.unlock, outcome: .error, requester: requester, target: target, mountState: .unmounted, sessionID: nil)
+                throw error
+            }
             self.passphrase = ""
             self.passphraseConfirmation = ""
             mountPoint = mountedAt
+            auditSessionID = sessionID
             items = runtime.listItems(at: mountedAt)
             state = .unlocked(mountPoint: mountedAt)
             appendEvent("Unlocked", "\(selectedIdentity.displayName) vault mounted for this session.")
+            audit.log(.unlock, outcome: .allow, requester: requester, target: target, mountState: .mounted, sessionID: sessionID)
 
             if shouldSaveSecret {
                 saveSecretForBiometrics(enteredPassphrase)
@@ -215,6 +241,7 @@ final class PrototypeVaultStore: ObservableObject {
             return
         }
 
+        let lockSessionID = auditSessionID
         do {
             state = .working("Locking vault")
             try await runtime.lock(mountPoint: mountPoint)
@@ -222,9 +249,12 @@ final class PrototypeVaultStore: ObservableObject {
             items = []
             state = .locked
             appendEvent("Locked", "\(selectedIdentity.displayName) vault detached.")
+            audit.log(.lock, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.vaultRelativePath, mountState: .unmounted, sessionID: lockSessionID)
+            auditSessionID = nil
         } catch {
             state = .error(error.localizedDescription)
             appendEvent("Lock failed", error.localizedDescription)
+            audit.log(.lock, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.vaultRelativePath, mountState: auditMountState, sessionID: lockSessionID)
         }
     }
 
@@ -290,9 +320,11 @@ final class PrototypeVaultStore: ObservableObject {
             for item in imported {
                 appendEvent("Imported \(item.name)", item.sizeDescription)
                 vaultDogBridge.addGuardedFile(name: item.name, kind: item.kind)
+                audit.log(.importItem, outcome: .allow, requester: selectedIdentity.id, target: item.name, mountState: .mounted, sessionID: auditSessionID)
             }
         } catch {
             appendEvent("Import failed", error.localizedDescription)
+            audit.log(.importItem, outcome: .error, requester: selectedIdentity.id, target: "import", mountState: auditMountState, sessionID: auditSessionID)
         }
     }
 
@@ -301,6 +333,7 @@ final class PrototypeVaultStore: ObservableObject {
             canUnlockWithBiometrics = false
             biometricStatusText = "Touch ID is not available on this Mac"
             appendEvent("Touch ID skipped", biometricStatusText)
+            audit.log(.keychainStore, outcome: .deny, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)
             return
         }
 
@@ -309,10 +342,12 @@ final class PrototypeVaultStore: ObservableObject {
             canUnlockWithBiometrics = true
             biometricStatusText = "Touch ID ready for \(selectedIdentity.displayName)"
             appendEvent("Touch ID enabled", "Future unlocks for \(selectedIdentity.displayName) can use biometric authentication.")
+            audit.log(.keychainStore, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)
         } catch {
             canUnlockWithBiometrics = false
             biometricStatusText = "Touch ID setup failed"
             appendEvent("Touch ID setup failed", error.localizedDescription)
+            audit.log(.keychainStore, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)
         }
     }
 

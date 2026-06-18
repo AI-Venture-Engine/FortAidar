@@ -124,6 +124,33 @@ func specAuditEvents() {
     expect(event.sessionID == "session-123", "audit session id")
 }
 
+func specAuditCodec() throws {
+    let codec = AuditEventCodec()
+    let event = AuditEvent(
+        wallTime: Date(timeIntervalSince1970: 1_700_000_000),
+        monotonicNanos: 123_456_789,
+        requester: "default",
+        operation: .unlock,
+        logicalTargetPath: "FortAidar.sparsebundle",
+        outcome: .allow,
+        grant: nil,
+        mountState: .mounted,
+        sessionID: "session-abc"
+    )
+
+    let line = try codec.line(for: event)
+    expect(!line.contains("\n"), "audit line has no embedded newline")
+    expect(!line.contains("\r"), "audit line has no carriage return")
+    // AuditEvent has no secret field, so a passphrase can never appear in a line.
+    expect(!line.contains("hunter2"), "audit line cannot carry a passphrase by construction")
+
+    let decoded = try codec.event(from: line)
+    expect(decoded == event, "audit event round-trips through JSONL")
+
+    let appSideOps: [AuditOperation] = [.vaultCreate, .identitySwitch, .importItem, .biometricAuth, .keychainStore]
+    expect(Set(appSideOps).count == 5, "app-side audit operations are present")
+}
+
 func specVaultIdentityPolicy() {
     let defaultIdentity = VaultIdentity(id: "default", displayName: "Aidar local", handle: "aidar", kind: .person)
     expect(defaultIdentity.keychainAccount == "vault-passphrase:default", "default identity has scoped keychain account")
@@ -139,6 +166,7 @@ specHdiutilCommandPolicy()
 specMCPContract()
 specSessionTokens()
 specAuditEvents()
+try specAuditCodec()
 specVaultIdentityPolicy()
 
 print("FortAidarCoreSpec passed")

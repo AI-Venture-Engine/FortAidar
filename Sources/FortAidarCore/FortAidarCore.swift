@@ -195,6 +195,7 @@ public struct SessionTokenIssuer: Sendable {
 }
 
 public enum AuditOperation: String, Codable, Sendable {
+    // Core / MCP-facing operations.
     case unlock
     case lock
     case mount
@@ -206,6 +207,15 @@ public enum AuditOperation: String, Codable, Sendable {
     case export
     case grantChange
     case passphraseOperation
+
+    // App-side (GUI) operations recorded by the local audit log.
+    // Added for the human-side preview events listed in the Audit v1 slice
+    // (vault create, identity switch, file import, biometric/keychain).
+    case vaultCreate
+    case identitySwitch
+    case importItem
+    case biometricAuth
+    case keychainStore
 }
 
 public enum AuditOutcome: String, Codable, Sendable {

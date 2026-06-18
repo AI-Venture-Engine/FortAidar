@@ -25,6 +25,23 @@ partners who understand the current limitations.
 - Current agent/MCP access control is an application-level design direction, not
   an OS sandbox boundary.
 
+## Preview Audit Log
+
+- Fort Aidar writes a local activity log to
+  `~/Library/Application Support/FortAidar/audit/events.jsonl`
+  (one JSON line per event).
+- It records app-side events such as vault create, unlock, lock, identity
+  switch, file import, and Touch ID / Keychain outcomes.
+- Events use machine-readable keys (operation, outcome, requester, logical
+  target, mount state, session id). No passphrase or vault secret is ever
+  written to this log.
+- The log lives outside the encrypted vault and outside any agent logical
+  namespace.
+- What it does NOT guarantee yet: it is append-only on a best-effort basis but
+  is not tamper-evident (no hash chaining) and is not yet written by an MCP
+  server. A process running as the same macOS user can read or alter the file.
+  Treat it as a local activity record for this preview, not a forensic audit.
+
 ## Partner Guidance
 
 - Use a test vault first.
