@@ -26,6 +26,14 @@ bash run.sh
 - **Transparent PNG** mascot (chromakey from JPEG)
 - **orbitControl()** for camera
 
+### Vendored Dependency
+- `p5.min.js`: p5.js `v1.11.3` (`January 22, 2025`)
+- Source checked against npm/jsDelivr package path:
+  `p5@1.11.3/lib/p5.min.js`
+- SHA-256:
+  `af51e6211e061b5ae463fbc5c3c1c272e5ca67fa560ed3513fde17325d837506`
+- Verification result: local file matches the upstream package byte-for-byte.
+
 ### Integration into SwiftUI App
 ```swift
 import SwiftUI
@@ -83,5 +91,5 @@ class VaultDogCoordinator: NSObject, WKScriptMessageHandler {
 ## Narrative (Future)
 Doberman (strict) + Dachshund (sassy) — guard files together. Dachshund flies to Mars with Elon. Returns with martian files. 💫
 
-## Linear
-[AI3-399](https://linear.app/ai3lab/issue/AI3-399/vaultdog-3d-glass-file-keeper-for-apple)
+## Project Note
+This mascot scene is a bundled local preview asset for the Fort Aidar app.

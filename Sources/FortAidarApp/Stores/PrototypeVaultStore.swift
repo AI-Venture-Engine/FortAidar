@@ -6,10 +6,10 @@ import SwiftUI
 @MainActor
 final class PrototypeVaultStore: ObservableObject {
     @Published var identities: [VaultIdentity] = [
-        VaultIdentity(id: "default", displayName: "Aidar local", handle: "aidar", kind: .person),
-        VaultIdentity(id: "model-kimi", displayName: "Kimi", handle: "kimi", kind: .agent),
-        VaultIdentity(id: "model-lu2", displayName: "Lu2", handle: "lu2", kind: .agent),
-        VaultIdentity(id: "model-ag", displayName: "Antigravity", handle: "ag", kind: .agent)
+        VaultIdentity(id: "default", displayName: "Local user", handle: "local", kind: .person),
+        VaultIdentity(id: "agent-alpha", displayName: "Agent Alpha", handle: "alpha", kind: .agent),
+        VaultIdentity(id: "agent-beta", displayName: "Agent Beta", handle: "beta", kind: .agent),
+        VaultIdentity(id: "agent-gamma", displayName: "Agent Gamma", handle: "gamma", kind: .agent)
     ]
     @Published var selectedIdentityID = "default"
     @Published var state: VaultState = .working("Checking vault")

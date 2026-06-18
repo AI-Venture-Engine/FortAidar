@@ -164,13 +164,13 @@ func specAuditCodec() throws {
 }
 
 func specVaultIdentityPolicy() {
-    let defaultIdentity = VaultIdentity(id: "default", displayName: "Aidar local", handle: "aidar", kind: .person)
+    let defaultIdentity = VaultIdentity(id: "default", displayName: "Local user", handle: "local", kind: .person)
     expect(defaultIdentity.keychainAccount == "vault-passphrase:default", "default identity has scoped keychain account")
     expect(defaultIdentity.vaultRelativePath == "FortAidar.sparsebundle", "default identity preserves legacy vault path")
 
-    let agentIdentity = VaultIdentity(id: "agent-lu2", displayName: "Lu2", handle: "lu2", kind: .agent)
-    expect(agentIdentity.keychainAccount == "vault-passphrase:agent-lu2", "agent identity has scoped keychain account")
-    expect(agentIdentity.vaultRelativePath == "Vaults/agent-lu2/FortAidar.sparsebundle", "agent identity has isolated vault path")
+    let agentIdentity = VaultIdentity(id: "agent-alpha", displayName: "Agent Alpha", handle: "alpha", kind: .agent)
+    expect(agentIdentity.keychainAccount == "vault-passphrase:agent-alpha", "agent identity has scoped keychain account")
+    expect(agentIdentity.vaultRelativePath == "Vaults/agent-alpha/FortAidar.sparsebundle", "agent identity has isolated vault path")
 }
 
 try specLogicalPathPolicy()

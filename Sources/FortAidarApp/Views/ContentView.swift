@@ -411,15 +411,10 @@ private struct DropZone: View {
                         .controlSize(.regular)
                         .disabled(!store.state.isMounted)
 
-                        Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/cybersheik/vaultdog")!)
-                        } label: {
-                            Text("guardian story")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .opacity(0.72)
+                        Text("guardian preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .opacity(0.72)
                     }
                     .frame(width: 310, alignment: .leading)
 
