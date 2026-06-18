@@ -15,6 +15,32 @@ The app also experiments with a more playful security interface: VaultDog acts
 as a visible guardian for the vault while the actual protection stays grounded
 in Apple platform primitives.
 
+## Beta Preview
+
+Fort Aidar is currently a beta/partner preview, not a production notarized
+release.
+
+You can download the current preview build from:
+
+<https://github.com/AI-Venture-Engine/FortAidar/releases/tag/v0.1.0-preview>
+
+This preview app is ad-hoc signed, but it is not signed with Apple Developer ID
+and is not notarized yet. On another Mac, Gatekeeper may warn that the app is
+from an unidentified developer. That is expected for this beta build; users may
+need to approve the first launch manually in macOS.
+
+Before a wider public release, the intended distribution steps are:
+
+1. Apple Developer ID registration.
+2. Hardened Runtime configuration.
+3. Developer ID signing.
+4. Apple notarization.
+5. A proper `.dmg` installer.
+6. A short onboarding guide for partner and public testers.
+
+For now, treat this build as a test vault preview. Do not store the only copy of
+important documents in it.
+
 ## Security framing
 
 Agent grants are application-level policy, not OS-level sandboxing. When the
