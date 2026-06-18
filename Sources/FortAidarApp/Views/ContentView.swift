@@ -166,6 +166,13 @@ private struct HeaderBar: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
+                Image(systemName: "timer")
+                    .foregroundStyle(.secondary)
+                Text(store.autoLockStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
                 Spacer()
 
                 Text("Vault file:")
@@ -299,7 +306,7 @@ private struct StatusPill: View {
         case .locked:
             Text("Ready to unlock.")
         case .unlocked:
-            Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") inside.")
+            Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") inside. \(store.autoLockStatusText).")
         case .working(let label):
             Text(label)
         case .error(let message):

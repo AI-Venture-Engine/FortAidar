@@ -22,12 +22,16 @@ final class PrototypeVaultStore: ObservableObject {
     @Published var passphraseFieldToken = UUID()
     @Published var canUnlockWithBiometrics = false
     @Published var biometricStatusText = "Touch ID setup pending"
+    @Published var autoLockStatusText = "Auto-lock starts after unlock"
     let vaultDogBridge = VaultDogBridge()
 
     private let keychain = BiometricVaultSecretStore()
     private let audit = AuditLogWriter()
+    private let autoLockPolicy = AutoLockPolicy(intervalSeconds: 600)
     private var mountPoint: URL?
     private var auditSessionID: String?
+    private var lastVaultActivityAt: Date?
+    private var autoLockTask: Task<Void, Never>?
 
     var selectedIdentity: VaultIdentity {
         identities.first { $0.id == selectedIdentityID } ?? identities[0]
@@ -110,6 +114,7 @@ final class PrototypeVaultStore: ObservableObject {
         passphrase = ""
         passphraseConfirmation = ""
         mountPoint = nil
+        cancelAutoLock(resetStatus: true)
         items = []
         appendEvent("Identity selected", "\(selectedIdentity.displayName) (\(selectedIdentityKindText))")
         audit.log(.identitySwitch, outcome: .allow, requester: selectedIdentity.id, target: "identity/\(selectedIdentity.id)", mountState: .unmounted, sessionID: nil)
@@ -170,6 +175,7 @@ final class PrototypeVaultStore: ObservableObject {
             focusPassphraseField()
             return
         }
+        registerVaultActivity()
 
         let panel = NSOpenPanel()
         panel.title = "Add to Fort Aidar"
@@ -222,6 +228,7 @@ final class PrototypeVaultStore: ObservableObject {
             auditSessionID = sessionID
             items = runtime.listItems(at: mountedAt)
             state = .unlocked(mountPoint: mountedAt)
+            registerVaultActivity()
             appendEvent("Unlocked", "\(selectedIdentity.displayName) vault mounted for this session.")
             audit.log(.unlock, outcome: .allow, requester: requester, target: target, mountState: .mounted, sessionID: sessionID)
 
@@ -236,11 +243,18 @@ final class PrototypeVaultStore: ObservableObject {
     }
 
     func lock() async {
+        await lockVault(successTitle: "Locked", cancelAutoLockTimer: true)
+    }
+
+    private func lockVault(successTitle: String, cancelAutoLockTimer: Bool) async {
         guard let mountPoint else {
             await refresh()
             return
         }
 
+        if cancelAutoLockTimer {
+            cancelAutoLock(resetStatus: false)
+        }
         let lockSessionID = auditSessionID
         do {
             state = .working("Locking vault")
@@ -248,13 +262,15 @@ final class PrototypeVaultStore: ObservableObject {
             self.mountPoint = nil
             items = []
             state = .locked
-            appendEvent("Locked", "\(selectedIdentity.displayName) vault detached.")
+            cancelAutoLock(resetStatus: true)
+            appendEvent(successTitle, "\(selectedIdentity.displayName) vault detached.")
             audit.log(.lock, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.vaultRelativePath, mountState: .unmounted, sessionID: lockSessionID)
             auditSessionID = nil
         } catch {
             state = .error(error.localizedDescription)
             appendEvent("Lock failed", error.localizedDescription)
             audit.log(.lock, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.vaultRelativePath, mountState: auditMountState, sessionID: lockSessionID)
+            registerVaultActivity()
         }
     }
 
@@ -263,6 +279,7 @@ final class PrototypeVaultStore: ObservableObject {
             appendEvent("Drop ignored", "Unlock the vault first.")
             return false
         }
+        registerVaultActivity()
 
         let fileURLType = NSPasteboard.PasteboardType.fileURL.rawValue
         let matching = providers.filter { $0.hasItemConformingToTypeIdentifier(fileURLType) }
@@ -310,10 +327,12 @@ final class PrototypeVaultStore: ObservableObject {
 
     func revealMountedVault() {
         guard let mountPoint else { return }
+        registerVaultActivity()
         NSWorkspace.shared.open(mountPoint)
     }
 
     private func importFileURLs(_ urls: [URL], into mountPoint: URL) {
+        registerVaultActivity()
         do {
             let imported = try runtime.importItems(urls, into: mountPoint)
             items = runtime.listItems(at: mountPoint)
@@ -325,6 +344,57 @@ final class PrototypeVaultStore: ObservableObject {
         } catch {
             appendEvent("Import failed", error.localizedDescription)
             audit.log(.importItem, outcome: .error, requester: selectedIdentity.id, target: "import", mountState: auditMountState, sessionID: auditSessionID)
+        }
+    }
+
+    private func registerVaultActivity(now: Date = Date()) {
+        guard mountPoint != nil else { return }
+        lastVaultActivityAt = now
+        autoLockStatusText = "Auto-lock after 10 min idle"
+        scheduleAutoLock(from: now)
+    }
+
+    private func scheduleAutoLock(from activityAt: Date) {
+        autoLockTask?.cancel()
+        let deadline = autoLockPolicy.deadline(after: activityAt)
+        let delay = max(0, deadline.timeIntervalSinceNow)
+        let nanoseconds = UInt64(delay * 1_000_000_000)
+
+        autoLockTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                return
+            }
+
+            await self?.autoLockIfIdle(expectedActivityAt: activityAt)
+        }
+    }
+
+    private func autoLockIfIdle(expectedActivityAt: Date) async {
+        guard let lastVaultActivityAt,
+              lastVaultActivityAt == expectedActivityAt,
+              mountPoint != nil
+        else {
+            return
+        }
+
+        guard autoLockPolicy.shouldLock(lastActivityAt: lastVaultActivityAt, now: Date()) else {
+            scheduleAutoLock(from: lastVaultActivityAt)
+            return
+        }
+
+        appendEvent("Auto-lock", "Idle timer expired after 10 minutes.")
+        await lockVault(successTitle: "Auto-locked", cancelAutoLockTimer: false)
+    }
+
+    private func cancelAutoLock(resetStatus: Bool) {
+        autoLockTask?.cancel()
+        autoLockTask = nil
+        lastVaultActivityAt = nil
+
+        if resetStatus {
+            autoLockStatusText = "Auto-lock starts after unlock"
         }
     }
 

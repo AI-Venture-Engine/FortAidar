@@ -58,17 +58,10 @@ struct PrototypeVaultRuntime: Sendable {
         try fileManager.createDirectory(at: mountPoint, withIntermediateDirectories: true)
         chmod(mountPoint.path, 0o700)
 
+        let attach = HdiutilCommand.attach(sparsebundlePath: vaultPath.path, mountPoint: mountPoint.path)
         let command = ProcessCommand(
-            executable: "/usr/bin/hdiutil",
-            arguments: [
-                "attach",
-                vaultPath.path,
-                "-mountpoint", mountPoint.path,
-                "-stdinpass",
-                "-nobrowse",
-                "-noautoopen",
-                "-quiet"
-            ],
+            executable: attach.executable,
+            arguments: attach.arguments,
             stdin: passphrase + "\n"
         )
         try await command.run()

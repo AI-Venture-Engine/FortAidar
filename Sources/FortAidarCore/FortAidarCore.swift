@@ -95,7 +95,9 @@ public struct HdiutilCommand: Equatable, Sendable {
                 "-noexec",
                 "-nosuid",
                 "-nodev",
-                "-nobrowse"
+                "-nobrowse",
+                "-noautoopen",
+                "-quiet"
             ],
             requiresPassphraseOnStdin: true
         )
@@ -135,6 +137,22 @@ public struct FortStatus: Equatable, Codable, Sendable {
             unlockedBy: unlockedBy,
             ttlSeconds: ttlSeconds
         )
+    }
+}
+
+public struct AutoLockPolicy: Equatable, Sendable {
+    public let intervalSeconds: TimeInterval
+
+    public init(intervalSeconds: TimeInterval) {
+        self.intervalSeconds = intervalSeconds
+    }
+
+    public func deadline(after activityAt: Date) -> Date {
+        activityAt.addingTimeInterval(intervalSeconds)
+    }
+
+    public func shouldLock(lastActivityAt: Date, now: Date) -> Bool {
+        now >= deadline(after: lastActivityAt)
     }
 }
 

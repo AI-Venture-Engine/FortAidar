@@ -46,6 +46,9 @@ func specHdiutilCommandPolicy() {
     expect(attach.arguments.contains("-noexec"), "attach uses noexec")
     expect(attach.arguments.contains("-nosuid"), "attach uses nosuid")
     expect(attach.arguments.contains("-nodev"), "attach uses nodev")
+    expect(attach.arguments.contains("-nobrowse"), "attach stays out of Finder sidebar")
+    expect(attach.arguments.contains("-noautoopen"), "attach does not auto-open Finder")
+    expect(attach.arguments.contains("-quiet"), "attach stays quiet for app runtime")
     expect(!attach.arguments.contains("secret-passphrase"), "passphrase is never an argument")
     expect(attach.requiresPassphraseOnStdin, "stdin passphrase is marked required")
 
@@ -101,6 +104,15 @@ func specSessionTokens() {
         !issuer.verify(token, agentID: "lu2", namespace: "agents/lu2", now: Date(timeIntervalSince1970: 1_801)),
         "token expires"
     )
+}
+
+func specAutoLockPolicy() {
+    let policy = AutoLockPolicy(intervalSeconds: 600)
+    let activityAt = Date(timeIntervalSince1970: 2_000)
+
+    expect(policy.deadline(after: activityAt) == Date(timeIntervalSince1970: 2_600), "auto-lock deadline is based on last activity")
+    expect(!policy.shouldLock(lastActivityAt: activityAt, now: Date(timeIntervalSince1970: 2_599)), "auto-lock waits before deadline")
+    expect(policy.shouldLock(lastActivityAt: activityAt, now: Date(timeIntervalSince1970: 2_600)), "auto-lock fires at deadline")
 }
 
 func specAuditEvents() {
@@ -165,6 +177,7 @@ try specLogicalPathPolicy()
 specHdiutilCommandPolicy()
 specMCPContract()
 specSessionTokens()
+specAutoLockPolicy()
 specAuditEvents()
 try specAuditCodec()
 specVaultIdentityPolicy()
