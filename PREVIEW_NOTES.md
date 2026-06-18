@@ -16,16 +16,20 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 - Identity selector for human/model vault separation.
 - Drag and drop import.
 - Add button import.
+- 10 minute idle auto-lock after unlock.
 - Activity panel.
+- Local JSONL audit log.
 - VaultDog visual guardian scene.
-- Core policy/spec runner for agent-path, token, and audit primitives.
+- Core policy/spec runner for agent-path, token, audit, and auto-lock
+  primitives.
+- Minimal MCP-compatible stdio server with read-only `fortaidar.status`.
 
 ## Known Preview Gaps
 
 - No Developer ID notarization yet.
 - No Google Workspace sign-in yet.
 - No cloud recovery.
-- No production MCP server shipped in the preview bundle yet.
+- MCP is read-only status only; no production agent file access yet.
 - No automatic updater.
 - Current character animation is an embedded preview, not the final Pocket Mode.
 
@@ -33,7 +37,7 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 
 ```sh
 swift run fortaidar-core-spec
+swift build --product fortaidar
 swift build --product FortAidarApp
 ./script/build_and_run.sh --verify
 ```
-

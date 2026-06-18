@@ -60,8 +60,9 @@ This package currently contains a testable Swift core skeleton:
 - `HdiutilCommand`: builds safe `hdiutil` attach/detach commands without putting
   passphrases in process arguments.
 - `FortMethod` and `FortStatus`: typed JSON-RPC/MCP contract primitives.
+- `AutoLockPolicy`: shared idle-deadline logic for short mount windows.
 - `SessionTokenIssuer`: short-lived HMAC-backed agent session tokens.
-- `AuditEvent`: required audit fields for future SQLite persistence.
+- `AuditEvent` and `AuditEventCodec`: machine-readable local audit events.
 
 It also contains a first SwiftUI prototype app:
 
@@ -73,9 +74,15 @@ It also contains a first SwiftUI prototype app:
 - drag files or folders into the unlocked vault
 - add files or folders with the `Add` button
 - lock/detach the vault
+- auto-lock the mounted vault after 10 minutes of idle time
 - reveal the sparsebundle or current mounted vault
-- activity panel for the first human-readable event trail
+- activity panel and local JSONL audit log
 - VaultDog embedded guardian scene
+
+The `fortaidar` executable is a minimal MCP-compatible stdio server for the
+preview. It supports `initialize`, `tools/list`, `tools/call`, and a read-only
+`fortaidar.status` tool. Unlocking and file import are still intentionally
+human-controlled in the macOS app.
 
 Touch ID support is intentionally simple in this prototype: after a successful
 passphrase create/unlock, Fort Aidar stores the vault passphrase in Keychain
@@ -114,7 +121,26 @@ Usage:
 3. Click `Create` or `Unlock`.
 4. On later runs, click `Touch ID` if available.
 5. Click `Add` or drop files/folders into the VaultDog drop zone.
-6. Click `Lock` when finished.
+6. Click `Lock` when finished, or let auto-lock detach after 10 minutes idle.
+
+## MCP / Agent Smoke Test
+
+The preview server currently exposes read-only redacted status:
+
+```sh
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"fortaidar.status"}' | swift run fortaidar
+```
+
+Minimal MCP tool flow:
+
+```sh
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fortaidar.status","arguments":{}}}' \
+  | swift run fortaidar
+```
 
 ## Partner Preview Package
 
@@ -145,6 +171,6 @@ toolchain test modules are available again.
 ## Roadmap Direction
 
 - Google Workspace / OIDC sign-in for human identity.
-- MCP server packaging for model/agent access.
+- Expand MCP server from read-only status to reviewed agent access flows.
 - Pocket Mode and Fort Artifact companion interactions.
 - Developer ID signing, hardened runtime, and notarization.
