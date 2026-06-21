@@ -5,9 +5,12 @@ MODE="${1:-run}"
 APP_NAME="FortAidarApp"
 BUNDLE_NAME="Fort Aidar"
 BUNDLE_ID="ai.aiventureengine.FortAidar"
+APP_VERSION="0.1.0-preview"
+BUILD_STAMP="${BUILD_STAMP:-dev-$(date -u +"%Y%m%dT%H%M%SZ")}"
 MIN_SYSTEM_VERSION="14.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ICON_SOURCE="$ROOT_DIR/Assets/AppIcon/FortAidarIcon.icns"
 DIST_DIR="$HOME/Applications"
 APP_BUNDLE="$DIST_DIR/$BUNDLE_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -29,6 +32,7 @@ cp "$BUILD_BINARY" "$APP_BINARY"
 if [ -d "$RESOURCE_BUNDLE" ]; then
   cp -R "$RESOURCE_BUNDLE" "$APP_RESOURCES/"
 fi
+cp "$ICON_SOURCE" "$APP_RESOURCES/FortAidarIcon.icns"
 chmod +x "$APP_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST
@@ -42,6 +46,12 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
   <string>$BUNDLE_NAME</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$BUILD_STAMP</string>
+  <key>CFBundleIconFile</key>
+  <string>FortAidarIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
@@ -49,7 +59,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSFaceIDUsageDescription</key>
-  <string>Fort Aidar uses biometric authentication to unlock your local encrypted vault secret from Keychain.</string>
+  <string>Fort Aidar uses biometric authentication to unlock and lock your local encrypted vault.</string>
 </dict>
 </plist>
 PLIST

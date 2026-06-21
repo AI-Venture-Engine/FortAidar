@@ -64,7 +64,12 @@ struct PrototypeVaultRuntime: Sendable {
             arguments: attach.arguments,
             stdin: passphrase + "\n"
         )
-        try await command.run()
+        do {
+            try await command.run()
+        } catch {
+            try? fileManager.removeItem(at: mountPoint)
+            throw error
+        }
         return mountPoint
     }
 
@@ -103,8 +108,10 @@ struct PrototypeVaultRuntime: Sendable {
 
     private func prepareBaseDirectories() throws {
         try fileManager.createDirectory(at: vaultDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: vaultPath.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: mountRoot, withIntermediateDirectories: true)
         chmod(vaultDirectory.path, 0o700)
+        chmod(vaultPath.deletingLastPathComponent().path, 0o700)
         chmod(supportDirectory.path, 0o700)
         chmod(mountRoot.path, 0o700)
     }

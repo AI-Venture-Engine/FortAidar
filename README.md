@@ -29,13 +29,18 @@ and is not notarized yet. On another Mac, Gatekeeper may warn that the app is
 from an unidentified developer. That is expected for this beta build; users may
 need to approve the first launch manually in macOS.
 
+The local packaging script now produces both a `.zip` package and a preview
+`.dmg`. The DMG is easier for partners to open and inspect, but it is still
+only a preview artifact until Developer ID signing and notarization are in
+place.
+
 Before a wider public release, the intended distribution steps are:
 
 1. Apple Developer ID registration.
 2. Hardened Runtime configuration.
 3. Developer ID signing.
 4. Apple notarization.
-5. A proper `.dmg` installer.
+5. A notarized `.dmg` installer.
 6. A short onboarding guide for partner and public testers.
 
 For now, treat this build as a test vault preview. Do not store the only copy of
@@ -67,9 +72,11 @@ This package currently contains a testable Swift core skeleton:
 It also contains a first SwiftUI prototype app:
 
 - one-window macOS interface
-- identity selector for a local human profile and model/agent profiles
-- create/unlock encrypted sparsebundle with a passphrase
-- save the vault passphrase in Keychain protected by biometric access control
+- simple local `Sign in` / `Register` flow keyed by email
+- email normalization for common Cyrillic/Latin lookalike letters before vault
+  lookup
+- create/unlock an encrypted sparsebundle with a password
+- save the vault password in Keychain protected by biometric access control
 - unlock later with Touch ID when the Mac supports it
 - drag files or folders into the unlocked vault
 - add files or folders with the `Add` button
@@ -85,10 +92,11 @@ preview. It supports `initialize`, `tools/list`, `tools/call`, and a read-only
 human-controlled in the macOS app.
 
 Touch ID support is intentionally simple in this prototype: after a successful
-passphrase create/unlock, Fort Aidar stores the vault passphrase in Keychain
+password registration/sign-in, Fort Aidar stores the vault password in Keychain
 with `biometryCurrentSet` and `ThisDeviceOnly`. Later unlocks can ask Keychain
-to release that secret through biometric authentication. The passphrase fallback
-remains available.
+to release the stored secret through biometric authentication. First-time
+registration uses a password; Touch ID is deliberately a follow-up convenience
+path in this preview.
 
 ## Run From Source
 
@@ -108,7 +116,7 @@ The prototype stores the encrypted sparsebundle at:
 ~/FortAidar/FortAidar.sparsebundle
 ```
 
-Additional model/agent identities use isolated vault paths under:
+Email-based local users use isolated vault paths under:
 
 ```text
 ~/FortAidar/Vaults/
@@ -116,12 +124,13 @@ Additional model/agent identities use isolated vault paths under:
 
 Usage:
 
-1. Select an identity.
-2. Enter a passphrase.
-3. Click `Create` or `Unlock`.
-4. On later runs, click `Touch ID` if available.
-5. Click `Add` or drop files/folders into the VaultDog drop zone.
-6. Click `Lock` when finished, or let auto-lock detach after 10 minutes idle.
+1. Choose `Register` for a first local user, enter an email, and enter a
+   password twice.
+2. The vault opens immediately after successful registration.
+3. On later runs, choose `Sign in`, enter the same email, and use the password
+   or `Touch ID` when available.
+4. Click `Add` or drop files/folders into the VaultDog drop zone.
+5. Click `Lock` when finished, or let auto-lock detach after 10 minutes idle.
 
 ## MCP / Agent Smoke Test
 
@@ -151,8 +160,11 @@ For early partner handoff, build and package the app from a local checkout:
 ```
 
 The package is written under `release/`. It includes the staged `.app`,
-preview notes, and security notes. Until Developer ID signing and notarization
-are configured, macOS may warn that the app is from an unidentified developer.
+preview notes, security notes, `BUILD_INFO.txt`, a `.zip`, a `.dmg`, and
+SHA-256 checksum files. The app window and DMG volume include the build stamp so
+parallel preview builds can be distinguished. Until Developer ID signing and
+notarization are configured, macOS may warn that the app is from an unidentified
+developer even when partners use the DMG.
 
 ## Verification
 

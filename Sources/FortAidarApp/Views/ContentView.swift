@@ -8,7 +8,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             HeaderBar(store: store, passphraseFocused: $passphraseFocused)
-                .frame(minHeight: store.isCreatingNewVault ? 204 : 164)
+                .frame(minHeight: store.authMode == .register && !store.state.isMounted ? 204 : 164)
 
             Divider()
 
@@ -69,64 +69,69 @@ private struct HeaderBar: View {
                         Text("Private folder. Unlock, add, lock.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                        Text(appBuildLabel)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
                     }
                 }
                 .frame(width: 260, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Identity")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Picker("Identity", selection: Binding(
-                        get: { store.selectedIdentityID },
-                        set: { store.selectIdentity($0) }
-                    )) {
-                        ForEach(store.identities) { identity in
-                            Label(identity.displayName, systemImage: identity.kind == .person ? "person.fill" : "cpu")
-                                .tag(identity.id)
+                    Picker("Auth mode", selection: $store.authMode) {
+                        ForEach(AuthMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
                         }
                     }
                     .labelsHidden()
-                    .pickerStyle(.menu)
+                    .pickerStyle(.segmented)
                     .disabled(store.state.isMounted || store.state.isWorking)
 
-                    Text("\(store.selectedIdentityKindText) / \(store.selectedIdentity.handle)")
+                    Text("Email")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    TextField("name@example.com", text: $store.ownerContact)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                    .disabled(store.state.isMounted || store.state.isWorking)
+
+                    Text(store.ownerSummaryText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                .frame(width: 170, alignment: .leading)
+                .frame(width: 230, alignment: .leading)
 
                 StatusPill(store: store)
-                    .frame(width: 220, alignment: .leading)
+                    .frame(width: 200, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Passphrase")
+                    Text("Password")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
                     passphraseInput(text: $store.passphrase, prompt: passphrasePrompt, isFocused: true)
 
-                    if store.isCreatingNewVault {
-                        passphraseInput(text: $store.passphraseConfirmation, prompt: "Repeat passphrase", isFocused: false)
+                    if shouldShowPasswordConfirmation {
+                        passphraseInput(text: $store.passphraseConfirmation, prompt: "Repeat password", isFocused: false)
                     }
                 }
                 .frame(minWidth: 220, idealWidth: 280, maxWidth: 360)
 
                 VStack(spacing: 8) {
-                    if store.canUnlockWithBiometrics {
+                    if store.canShowBiometricButton {
                         Button {
-                            Task { await store.unlockWithBiometrics() }
+                            Task { await store.performBiometricVaultAction() }
                         } label: {
-                            Label("Touch ID", systemImage: "touchid")
+                            Label(biometricButtonTitle, systemImage: "touchid")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(store.state.isWorking)
                     }
 
-                    if store.canUnlockWithBiometrics {
+                    if store.canShowBiometricButton {
                         Button {
                             Task { await store.performPrimaryVaultAction() }
                         } label: {
@@ -201,7 +206,16 @@ private struct HeaderBar: View {
     }
 
     private var passphrasePrompt: String {
-        store.isCreatingNewVault ? "New vault passphrase" : "Enter vault passphrase"
+        switch store.authMode {
+        case .register:
+            return "New password"
+        case .signIn:
+            return "Password"
+        }
+    }
+
+    private var shouldShowPasswordConfirmation: Bool {
+        store.authMode == .register && !store.state.isMounted
     }
 
     private func passphraseInput(text: Binding<String>, prompt: String, isFocused: Bool) -> some View {
@@ -227,7 +241,7 @@ private struct HeaderBar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help(store.isPassphraseVisible ? "Hide passphrase" : "Show passphrase")
+            .help(store.isPassphraseVisible ? "Hide password" : "Show password")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -240,13 +254,17 @@ private struct HeaderBar: View {
     }
 
     private var primaryButtonTitle: String {
+        if store.authMode == .register && !store.state.isMounted {
+            return store.state.isWorking ? "Working" : "Register"
+        }
+
         switch store.state {
         case .missing:
-            return "Create"
+            return "Sign in"
         case .locked:
-            return "Unlock"
+            return "Sign in"
         case .error:
-            return store.isCreatingNewVault ? "Create" : "Unlock"
+            return "Sign in"
         case .unlocked:
             return "Lock"
         case .working:
@@ -255,18 +273,37 @@ private struct HeaderBar: View {
     }
 
     private var primaryButtonIcon: String {
+        if store.authMode == .register && !store.state.isMounted {
+            return store.state.isWorking ? "hourglass" : "person.badge.plus"
+        }
+
         switch store.state {
         case .missing:
-            return "plus"
+            return "lock.fill"
         case .locked:
             return "lock.fill"
         case .error:
-            return store.isCreatingNewVault ? "plus" : "lock.fill"
+            return "lock.fill"
         case .unlocked:
             return "lock.open.fill"
         case .working:
             return "hourglass"
         }
+    }
+
+    private var biometricButtonTitle: String {
+        if store.state.isMounted {
+            return "Touch ID Lock"
+        }
+
+        return "Touch ID"
+    }
+
+    private var appBuildLabel: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "preview"
+        let build = info["CFBundleVersion"] as? String ?? "dev"
+        return "Build \(version) / \(build)"
     }
 }
 
@@ -302,9 +339,13 @@ private struct StatusPill: View {
     private var stateDetail: some View {
         switch store.state {
         case .missing:
-            Text("Create the vault once.")
+            if store.authMode == .register {
+                Text(store.hasAuthEmail ? "Ready to create this vault." : "Enter email to register.")
+            } else {
+                Text(store.hasAuthEmail ? "No local vault. Register first." : "Enter email to sign in.")
+            }
         case .locked:
-            Text("Ready to unlock.")
+            Text("Ready to sign in.")
         case .unlocked:
             Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") inside. \(store.autoLockStatusText).")
         case .working(let label):
@@ -390,7 +431,7 @@ private struct DropZone: View {
                     Text(store.state.isMounted ? "Add private files" : "Unlock to add private files")
                         .font(.headline.weight(.semibold))
 
-                    Text(store.state.isMounted ? "Click Add or drop files here. VaultDog will guard them." : "Use Touch ID if ready, or unlock once with your passphrase.")
+                    Text(store.state.isMounted ? "Click Add or drop files here. VaultDog will guard them." : "Register with a password first. Touch ID works after the password is saved.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)

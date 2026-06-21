@@ -80,6 +80,25 @@ struct BiometricVaultSecretStore: Sendable {
         return passphrase
     }
 
+    func confirmBiometricAction(reason: String) async throws {
+        let context = LAContext()
+        var error: NSError?
+
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            throw error ?? KeychainSecretError.biometricUnavailable
+        }
+
+        try await withCheckedThrowingContinuation { continuation in
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? KeychainSecretError.biometricUnavailable)
+                }
+            }
+        }
+    }
+
     func delete(for identity: VaultIdentity) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -92,6 +111,7 @@ struct BiometricVaultSecretStore: Sendable {
 
 enum KeychainSecretError: LocalizedError {
     case accessControlUnavailable
+    case biometricUnavailable
     case invalidData
     case unhandledStatus(OSStatus)
 
@@ -99,6 +119,8 @@ enum KeychainSecretError: LocalizedError {
         switch self {
         case .accessControlUnavailable:
             return "Could not create biometric Keychain access control."
+        case .biometricUnavailable:
+            return "Biometric authentication is not available on this Mac."
         case .invalidData:
             return "Stored Keychain secret is not readable."
         case .unhandledStatus(let status):

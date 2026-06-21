@@ -92,12 +92,8 @@ public struct HdiutilCommand: Equatable, Sendable {
                 "-mountpoint",
                 mountPoint,
                 "-stdinpass",
-                "-noexec",
-                "-nosuid",
-                "-nodev",
                 "-nobrowse",
-                "-noautoopen",
-                "-quiet"
+                "-noautoopen"
             ],
             requiresPassphraseOnStdin: true
         )

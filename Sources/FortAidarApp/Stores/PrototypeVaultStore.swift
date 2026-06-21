@@ -1,17 +1,20 @@
 import AppKit
+import CryptoKit
 import Foundation
 import FortAidarCore
 import SwiftUI
 
 @MainActor
 final class PrototypeVaultStore: ObservableObject {
-    @Published var identities: [VaultIdentity] = [
-        VaultIdentity(id: "default", displayName: "Local user", handle: "local", kind: .person),
-        VaultIdentity(id: "agent-alpha", displayName: "Agent Alpha", handle: "alpha", kind: .agent),
-        VaultIdentity(id: "agent-beta", displayName: "Agent Beta", handle: "beta", kind: .agent),
-        VaultIdentity(id: "agent-gamma", displayName: "Agent Gamma", handle: "gamma", kind: .agent)
-    ]
-    @Published var selectedIdentityID = "default"
+    @Published var ownerName: String {
+        didSet { persistOwnerIdentity() }
+    }
+    @Published var ownerContact: String {
+        didSet { handleAuthIdentityInputChanged() }
+    }
+    @Published var authMode: AuthMode {
+        didSet { handleAuthModeChanged() }
+    }
     @Published var state: VaultState = .working("Checking vault")
     @Published var items: [VaultItem] = []
     @Published var events: [VaultEvent] = []
@@ -21,6 +24,7 @@ final class PrototypeVaultStore: ObservableObject {
     @Published var isPassphraseVisible = false
     @Published var passphraseFieldToken = UUID()
     @Published var canUnlockWithBiometrics = false
+    @Published var canUseBiometrics = false
     @Published var biometricStatusText = "Touch ID setup pending"
     @Published var autoLockStatusText = "Auto-lock starts after unlock"
     let vaultDogBridge = VaultDogBridge()
@@ -33,8 +37,59 @@ final class PrototypeVaultStore: ObservableObject {
     private var lastVaultActivityAt: Date?
     private var autoLockTask: Task<Void, Never>?
 
+    init() {
+        UserDefaults.standard.removeObject(forKey: Self.ownerNameDefaultsKey)
+        ownerName = ""
+        ownerContact = UserDefaults.standard.string(forKey: Self.ownerContactDefaultsKey) ?? ""
+        let savedMode = UserDefaults.standard.string(forKey: Self.authModeDefaultsKey)
+        authMode = savedMode.flatMap(AuthMode.init(rawValue:)) ?? .signIn
+    }
+
     var selectedIdentity: VaultIdentity {
-        identities.first { $0.id == selectedIdentityID } ?? identities[0]
+        VaultIdentity(
+            id: authIdentityID,
+            displayName: ownerDisplayName,
+            handle: ownerHandle,
+            kind: .person
+        )
+    }
+
+    var ownerSummaryText: String {
+        let email = normalizedAuthEmail
+        return email.isEmpty ? "Enter email to continue" : email
+    }
+
+    var hasAuthEmail: Bool {
+        !normalizedAuthEmail.isEmpty
+    }
+
+    var canShowBiometricButton: Bool {
+        guard canUseBiometrics, hasAuthEmail else { return false }
+        if state.isMounted { return true }
+        return authMode == .signIn && canUnlockWithBiometrics
+    }
+
+    private var ownerDisplayName: String {
+        return normalizedAuthEmail.isEmpty ? "Email required" : normalizedAuthEmail
+    }
+
+    private var ownerHandle: String {
+        normalizedAuthEmail.isEmpty ? "email-required" : normalizedAuthEmail
+    }
+
+    private var normalizedAuthEmail: String {
+        canonicalizeEmailInput(ownerContact)
+    }
+
+    private var authIdentityID: String {
+        guard !normalizedAuthEmail.isEmpty else {
+            return "email-required"
+        }
+
+        let slug = slugComponent(from: normalizedAuthEmail)
+        let digest = SHA256.hash(data: Data(normalizedAuthEmail.utf8))
+        let shortHash = digest.map { String(format: "%02x", $0) }.joined().prefix(10)
+        return "user-\(slug)-\(shortHash)"
     }
 
     private var runtime: PrototypeVaultRuntime {
@@ -84,19 +139,32 @@ final class PrototypeVaultStore: ObservableObject {
     }
 
     var selectedIdentityKindText: String {
-        switch selectedIdentity.kind {
-        case .person:
-            return "person"
-        case .agent:
-            return "model"
-        }
+        "person"
     }
 
     func refresh() async {
+        guard hasAuthEmail else {
+            canUseBiometrics = keychain.canEvaluateBiometrics()
+            canUnlockWithBiometrics = false
+            biometricStatusText = "Enter email to use password or Touch ID"
+            state = .missing
+            items = []
+            return
+        }
+
+        canUseBiometrics = keychain.canEvaluateBiometrics()
         canUnlockWithBiometrics = keychain.hasStoredSecret(for: selectedIdentity)
-        biometricStatusText = keychain.canEvaluateBiometrics()
-            ? (canUnlockWithBiometrics ? "Touch ID ready for \(selectedIdentity.displayName)" : "Touch ID will be saved after first unlock for \(selectedIdentity.displayName)")
-            : "Touch ID is not available on this Mac"
+        if canUseBiometrics {
+            if canUnlockWithBiometrics {
+                biometricStatusText = "Touch ID ready for \(selectedIdentity.displayName)"
+            } else if authMode == .register {
+                biometricStatusText = "Touch ID will be enabled after password registration"
+            } else {
+                biometricStatusText = "Touch ID will be saved after password sign-in"
+            }
+        } else {
+            biometricStatusText = "Touch ID is not available on this Mac"
+        }
 
         if let mountPoint {
             items = runtime.listItems(at: mountPoint)
@@ -108,43 +176,66 @@ final class PrototypeVaultStore: ObservableObject {
         }
     }
 
-    func selectIdentity(_ identityID: String) {
-        guard identityID != selectedIdentityID else { return }
-        selectedIdentityID = identityID
-        passphrase = ""
-        passphraseConfirmation = ""
-        mountPoint = nil
-        cancelAutoLock(resetStatus: true)
-        items = []
-        appendEvent("Identity selected", "\(selectedIdentity.displayName) (\(selectedIdentityKindText))")
-        audit.log(.identitySwitch, outcome: .allow, requester: selectedIdentity.id, target: "identity/\(selectedIdentity.id)", mountState: .unmounted, sessionID: nil)
-
-        Task { await refresh() }
-    }
-
     func focusPassphraseField() {
         passphraseFieldToken = UUID()
     }
 
     func createOrUnlock() async {
+        if authMode == .register {
+            await registerWithPassword()
+        } else {
+            await signInWithPassword()
+        }
+    }
+
+    func registerWithPassword() async {
+        guard validateEmailForAuth() else { return }
+
         guard !passphrase.isEmpty else {
-            appendEvent("Passphrase required", "Enter a passphrase to create or unlock the vault.")
+            appendEvent("Password required", "Enter a password to register this vault.")
             return
         }
 
-        if isCreatingNewVault {
-            guard !passphraseConfirmation.isEmpty else {
-                appendEvent("Confirm passphrase", "Enter the same passphrase twice before creating a new vault.")
-                return
-            }
-
-            guard passphrase == passphraseConfirmation else {
-                appendEvent("Passphrases do not match", "Check the visible text or keyboard layout, then try again.")
-                return
-            }
+        guard !passphraseConfirmation.isEmpty else {
+            appendEvent("Confirm password", "Enter the same password twice before registering.")
+            return
         }
 
-        await createOrUnlock(passphrase: passphrase, shouldSaveSecret: true)
+        guard passphrase == passphraseConfirmation else {
+            appendEvent("Passwords do not match", "Check the visible text or keyboard layout, then try again.")
+            return
+        }
+
+        if runtime.vaultExists() {
+            appendEvent("Vault already exists", "Signing in to \(normalizedAuthEmail) with the entered password.")
+            let success = await createOrUnlock(passphrase: passphrase, shouldSaveSecret: true)
+            if success {
+                authMode = .signIn
+            }
+            return
+        }
+
+        let success = await createOrUnlock(passphrase: passphrase, shouldSaveSecret: true)
+        if success {
+            authMode = .signIn
+        }
+    }
+
+    func signInWithPassword() async {
+        guard validateEmailForAuth() else { return }
+
+        guard runtime.vaultExists() else {
+            appendEvent("No vault for this email", "Switch to Register to create storage for \(normalizedAuthEmail).")
+            state = .missing
+            return
+        }
+
+        guard !passphrase.isEmpty else {
+            appendEvent("Password required", "Enter the password for \(normalizedAuthEmail).")
+            return
+        }
+
+        _ = await createOrUnlock(passphrase: passphrase, shouldSaveSecret: true)
     }
 
     func performPrimaryVaultAction() async {
@@ -155,17 +246,62 @@ final class PrototypeVaultStore: ObservableObject {
         }
     }
 
+    func performBiometricVaultAction() async {
+        if state.isMounted {
+            await lockWithBiometrics()
+        } else {
+            await unlockWithBiometrics()
+        }
+    }
+
     func unlockWithBiometrics() async {
+        guard validateEmailForAuth() else { return }
+
+        guard runtime.vaultExists() else {
+            appendEvent("No vault for this email", "Switch to Register to create storage for \(normalizedAuthEmail).")
+            state = .missing
+            return
+        }
+
+        guard canUnlockWithBiometrics || keychain.hasStoredSecret(for: selectedIdentity) else {
+            appendEvent("Touch ID not set", "Sign in with password once to enable Touch ID for this email.")
+            state = .locked
+            return
+        }
+
         do {
             state = .working("Authenticating")
             let secret = try keychain.readPassphrase(for: selectedIdentity)
             appendEvent("Authenticated", "Keychain released the vault secret for \(selectedIdentity.displayName).")
             audit.log(.biometricAuth, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: nil)
-            await createOrUnlock(passphrase: secret, shouldSaveSecret: false)
+            _ = await createOrUnlock(passphrase: secret, shouldSaveSecret: false)
         } catch {
             state = runtime.vaultExists() ? .locked : .missing
             appendEvent("Touch ID failed", error.localizedDescription)
             audit.log(.biometricAuth, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: nil)
+        }
+    }
+
+    func lockWithBiometrics() async {
+        guard state.isMounted else {
+            await refresh()
+            return
+        }
+
+        do {
+            state = .working("Confirming lock")
+            try await keychain.confirmBiometricAction(reason: "Lock Fort Aidar vault for \(selectedIdentity.displayName)")
+            appendEvent("Touch ID confirmed", "Locking \(selectedIdentity.displayName) vault.")
+            audit.log(.biometricAuth, outcome: .allow, requester: selectedIdentity.id, target: "lock-confirmation", mountState: auditMountState, sessionID: auditSessionID)
+            await lockVault(successTitle: "Locked with Touch ID", cancelAutoLockTimer: true)
+        } catch {
+            if let mountPoint {
+                state = .unlocked(mountPoint: mountPoint)
+            } else {
+                state = runtime.vaultExists() ? .locked : .missing
+            }
+            appendEvent("Touch ID lock cancelled", error.localizedDescription)
+            audit.log(.biometricAuth, outcome: .error, requester: selectedIdentity.id, target: "lock-confirmation", mountState: auditMountState, sessionID: auditSessionID)
         }
     }
 
@@ -194,7 +330,7 @@ final class PrototypeVaultStore: ObservableObject {
         importFileURLs(panel.urls, into: mountPoint)
     }
 
-    private func createOrUnlock(passphrase: String, shouldSaveSecret: Bool) async {
+    private func createOrUnlock(passphrase: String, shouldSaveSecret: Bool) async -> Bool {
         let enteredPassphrase = passphrase
         let requester = selectedIdentity.id
         let target = selectedIdentity.vaultRelativePath
@@ -235,10 +371,12 @@ final class PrototypeVaultStore: ObservableObject {
             if shouldSaveSecret {
                 saveSecretForBiometrics(enteredPassphrase)
             }
+            return true
         } catch {
             let message = friendlyUnlockError(from: error)
             state = .error(message)
             appendEvent("Unlock failed", message)
+            return false
         }
     }
 
@@ -428,6 +566,116 @@ final class PrototypeVaultStore: ObservableObject {
         }
     }
 
+    private func handleAuthIdentityInputChanged() {
+        persistOwnerIdentity()
+        guard !state.isMounted else { return }
+        passphrase = ""
+        passphraseConfirmation = ""
+        items = []
+        mountPoint = nil
+        cancelAutoLock(resetStatus: true)
+        Task { await refresh() }
+    }
+
+    private func handleAuthModeChanged() {
+        UserDefaults.standard.set(authMode.rawValue, forKey: Self.authModeDefaultsKey)
+        guard !state.isMounted else { return }
+        passphrase = ""
+        passphraseConfirmation = ""
+        Task { await refresh() }
+    }
+
+    private func persistOwnerIdentity() {
+        UserDefaults.standard.removeObject(forKey: Self.ownerNameDefaultsKey)
+        UserDefaults.standard.set(normalizedAuthEmail, forKey: Self.ownerContactDefaultsKey)
+    }
+
+    private func validateEmailForAuth() -> Bool {
+        let email = normalizedAuthEmail
+        guard !email.isEmpty else {
+            appendEvent("Email required", "Enter your email before signing in or registering.")
+            state = .missing
+            return false
+        }
+
+        guard isValidAuthEmail(email) else {
+            appendEvent("Check email", "Use a normal email with Latin letters, numbers, dots, dashes, underscores, or plus signs.")
+            state = .missing
+            return false
+        }
+
+        return true
+    }
+
+    private func canonicalizeEmailInput(_ value: String) -> String {
+        let homographMap: [Unicode.Scalar: String] = [
+            "а": "a", "А": "a",
+            "е": "e", "Е": "e",
+            "о": "o", "О": "o",
+            "р": "p", "Р": "p",
+            "с": "c", "С": "c",
+            "у": "y", "У": "y",
+            "х": "x", "Х": "x",
+            "к": "k", "К": "k",
+            "м": "m", "М": "m",
+            "т": "t", "Т": "t",
+            "в": "b", "В": "b",
+            "н": "h", "Н": "h",
+            "і": "i", "І": "i",
+            "ї": "i", "Ї": "i",
+            "ј": "j", "Ј": "j",
+            "ѕ": "s", "Ѕ": "s"
+        ]
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        var normalized = ""
+        for scalar in trimmed.unicodeScalars {
+            if let replacement = homographMap[scalar] {
+                normalized.append(replacement)
+            } else {
+                normalized.append(String(scalar))
+            }
+        }
+        return normalized.lowercased()
+    }
+
+    private func isValidAuthEmail(_ value: String) -> Bool {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._%+-@")
+        guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return false
+        }
+
+        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              !parts[0].isEmpty,
+              !parts[1].isEmpty,
+              parts[1].contains(".")
+        else {
+            return false
+        }
+
+        let domainLabels = parts[1].split(separator: ".", omittingEmptySubsequences: false)
+        return domainLabels.allSatisfy { !$0.isEmpty }
+    }
+
+    private func slugComponent(from value: String) -> String {
+        let folded = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+
+        var result = ""
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                result.append(String(scalar))
+            } else if !result.hasSuffix("-") {
+                result.append("-")
+            }
+        }
+
+        let trimmed = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty ? "email" : trimmed
+    }
+
     private func friendlyUnlockError(from error: Error) -> String {
         let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowercased = message.lowercased()
@@ -442,4 +690,8 @@ final class PrototypeVaultStore: ObservableObject {
 
         return message.isEmpty ? "Could not unlock the vault." : message
     }
+
+    private static let ownerNameDefaultsKey = "FortAidar.ownerName"
+    private static let ownerContactDefaultsKey = "FortAidar.ownerContact"
+    private static let authModeDefaultsKey = "FortAidar.authMode"
 }

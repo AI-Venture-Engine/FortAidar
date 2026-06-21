@@ -10,8 +10,9 @@ partners who understand the current limitations.
 - The preview app auto-locks the mounted vault after 10 minutes of idle time.
 - The passphrase is sent to `hdiutil` through standard input, not as a process
   argument.
-- The mounted sparsebundle uses `noexec`, `nosuid`, `nodev`, and `nobrowse`
-  attach flags.
+- The mounted sparsebundle uses `stdinpass`, `nobrowse`, and `noautoopen`
+  attach flags. macOS may add mount protections such as `nodev`, `nosuid`, and
+  `noowners`; unsupported `hdiutil attach` flags are not passed.
 - After a successful manual unlock, Fort Aidar can store the vault passphrase in
   Keychain with biometric access control.
 - Touch ID unlock asks Keychain to release the stored vault secret for the

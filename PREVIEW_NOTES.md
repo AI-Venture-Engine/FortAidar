@@ -3,8 +3,8 @@
 Fort Aidar is a free, AI-native protected vault for people and agents. This
 preview focuses on a local macOS vault with a simple, visible workflow:
 
-1. Select an identity.
-2. Create or unlock a local encrypted vault.
+1. Register a local user with email plus password.
+2. Sign in later with email plus password or Touch ID.
 3. Add files or folders.
 4. Lock the vault when finished.
 
@@ -12,8 +12,8 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 
 - macOS SwiftUI preview app.
 - Local encrypted sparsebundle storage.
-- Keychain + Touch ID unlock after first manual unlock.
-- Identity selector for human/model vault separation.
+- Keychain + Touch ID unlock after password registration or sign-in.
+- Email-keyed local vault separation.
 - Drag and drop import.
 - Add button import.
 - 10 minute idle auto-lock after unlock.
@@ -27,6 +27,7 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 ## Known Preview Gaps
 
 - No Developer ID notarization yet.
+- Preview DMG is available for handoff, but it is not notarized yet.
 - No Google Workspace sign-in yet.
 - No cloud recovery.
 - MCP is read-only status only; no production agent file access yet.

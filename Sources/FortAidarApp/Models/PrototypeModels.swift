@@ -1,5 +1,19 @@
 import Foundation
 
+enum AuthMode: String, CaseIterable, Equatable {
+    case signIn
+    case register
+
+    var title: String {
+        switch self {
+        case .signIn:
+            return "Sign in"
+        case .register:
+            return "Register"
+        }
+    }
+}
+
 enum VaultState: Equatable {
     case missing
     case locked
