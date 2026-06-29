@@ -100,11 +100,11 @@ Fort Aidar.
 
 Touch ID support is intentionally simple in this prototype: after a successful
 password registration/sign-in, Fort Aidar tries to store the vault password in
-Keychain with biometric access control and `ThisDeviceOnly`. Later unlocks can
-ask Keychain to release the stored secret through Touch ID or the compatible
-device-owner authentication path provided by macOS. First-time registration
-uses a password; Touch ID is deliberately a follow-up convenience path in this
-preview.
+Keychain with biometric access control and `ThisDeviceOnly`. If the preview
+build lacks the entitlements needed for biometric Keychain items, it falls back
+to a `ThisDeviceOnly` Keychain item and requires Touch ID through
+LocalAuthentication before reading it. First-time registration uses a password;
+Touch ID is deliberately a follow-up convenience path in this preview.
 
 ## Run From Source
 

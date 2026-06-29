@@ -31,8 +31,22 @@ struct BiometricVaultSecretStore: Sendable {
 
         do {
             try add(passphrase: passphrase, for: identity, flags: .biometryCurrentSet)
+            return
         } catch {
+            // Fall through to broader Keychain compatibility modes.
+        }
+
+        do {
             try add(passphrase: passphrase, for: identity, flags: .userPresence)
+            return
+        } catch {
+            // Fall through to preview mode guarded by app-side Touch ID.
+        }
+
+        do {
+            try addPortable(passphrase: passphrase, for: identity)
+        } catch {
+            throw error
         }
     }
 
@@ -60,9 +74,26 @@ struct BiometricVaultSecretStore: Sendable {
         }
     }
 
-    func readPassphrase(for identity: VaultIdentity) throws -> String {
+    private func addPortable(passphrase: String, for identity: VaultIdentity) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: identity.keychainAccount,
+            kSecValueData as String: Data(passphrase.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainSecretError.unhandledStatus(status)
+        }
+    }
+
+    func readPassphrase(for identity: VaultIdentity) async throws -> String {
         let context = LAContext()
-        context.localizedReason = "Unlock Fort Aidar vault for \(identity.displayName)"
+        let reason = "Unlock Fort Aidar vault for \(identity.displayName)"
+        context.localizedReason = reason
+        try await evaluateBiometricAction(reason: reason, context: context)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -90,6 +121,10 @@ struct BiometricVaultSecretStore: Sendable {
 
     func confirmBiometricAction(reason: String) async throws {
         let context = LAContext()
+        try await evaluateBiometricAction(reason: reason, context: context)
+    }
+
+    private func evaluateBiometricAction(reason: String, context: LAContext) async throws {
         var error: NSError?
 
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {

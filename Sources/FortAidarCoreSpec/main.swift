@@ -195,6 +195,44 @@ func specAuthEmailPolicy() {
     expect(anotherIdentity?.id != latinIdentity?.id, "another email creates another local vault id")
 }
 
+func specBiometricSignInPolicy() {
+    let policy = BiometricSignInPolicy()
+
+    let pending = policy.state(
+        canUseBiometrics: true,
+        hasValidEmail: true,
+        isMounted: false,
+        isWorking: false,
+        authMode: .signIn,
+        hasStoredSecret: false
+    )
+    expect(pending.isVisible, "Touch ID panel is visible for sign-in with a valid email even before a stored secret exists")
+    expect(!pending.canRun, "Touch ID sign-in is disabled until the vault password has been saved in Keychain")
+    expect(pending.message == "Sign in with password once to enable Touch ID for this email.", "pending Touch ID message is explicit")
+
+    let ready = policy.state(
+        canUseBiometrics: true,
+        hasValidEmail: true,
+        isMounted: false,
+        isWorking: false,
+        authMode: .signIn,
+        hasStoredSecret: true
+    )
+    expect(ready.isVisible, "Touch ID panel remains visible when a stored secret exists")
+    expect(ready.canRun, "Touch ID sign-in is active when a stored secret exists")
+
+    let mounted = policy.state(
+        canUseBiometrics: true,
+        hasValidEmail: true,
+        isMounted: true,
+        isWorking: false,
+        authMode: .signIn,
+        hasStoredSecret: false
+    )
+    expect(mounted.isVisible, "Touch ID lock panel is visible while the vault is mounted")
+    expect(mounted.canRun, "Touch ID lock can run while the vault is mounted")
+}
+
 try specLogicalPathPolicy()
 specHdiutilCommandPolicy()
 specMCPContract()
@@ -204,5 +242,6 @@ specAuditEvents()
 try specAuditCodec()
 specVaultIdentityPolicy()
 specAuthEmailPolicy()
+specBiometricSignInPolicy()
 
 print("FortAidarCoreSpec passed")

@@ -16,7 +16,8 @@ with a blank email field so another person can create a separate local vault.
 
 - macOS SwiftUI preview app.
 - Local encrypted sparsebundle storage.
-- Keychain + Touch ID unlock after password registration or sign-in.
+- Keychain + Touch ID unlock after password registration or sign-in, with a
+  preview fallback when biometric Keychain access control is unavailable.
 - Email-keyed local vault separation.
 - Drag and drop import.
 - Add button import.

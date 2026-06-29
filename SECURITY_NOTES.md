@@ -17,12 +17,19 @@ partners who understand the current limitations.
   Keychain with biometric access control.
 - Touch ID unlock asks Keychain to release the stored vault secret for the
   selected identity.
+- In ad-hoc preview builds where biometric Keychain access control is rejected
+  by macOS entitlement checks, Fort Aidar falls back to a `ThisDeviceOnly`
+  Keychain item and requires Touch ID through LocalAuthentication before reading
+  it. Developer ID signing should restore the stronger Keychain-enforced path.
 - The email field selects a local vault identity on this Mac. It is not a
   remote account or recovery channel in this preview.
 
 ## Important Limits
 
 - This preview is not notarized yet.
+- The fallback Touch ID path is preview-grade and depends on app-side
+  LocalAuthentication before Keychain read, not solely on Keychain access
+  control.
 - This preview does not provide cloud recovery.
 - This preview does not provide email-based password reset. A different email
   creates or selects a different local vault.

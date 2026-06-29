@@ -29,6 +29,7 @@ final class PrototypeVaultStore: ObservableObject {
     let vaultDogBridge = VaultDogBridge()
 
     private let authEmailPolicy = AuthEmailPolicy()
+    private let biometricPolicy = BiometricSignInPolicy()
     private let keychain = BiometricVaultSecretStore()
     private let audit = AuditLogWriter()
     private let autoLockPolicy = AutoLockPolicy(intervalSeconds: 600)
@@ -68,13 +69,11 @@ final class PrototypeVaultStore: ObservableObject {
     }
 
     var canShowBiometricButton: Bool {
-        canUseBiometrics && hasValidAuthEmail
+        biometricPanelState.isVisible
     }
 
     var canRunBiometricAction: Bool {
-        guard canUseBiometrics, hasValidAuthEmail, !state.isWorking else { return false }
-        if state.isMounted { return true }
-        return authMode == .signIn && canUnlockWithBiometrics
+        biometricPanelState.canRun
     }
 
     var authContextText: String {
@@ -92,6 +91,17 @@ final class PrototypeVaultStore: ObservableObject {
 
     private var hasValidAuthEmail: Bool {
         authEmailPolicy.isValid(normalizedAuthEmail)
+    }
+
+    private var biometricPanelState: BiometricSignInState {
+        biometricPolicy.state(
+            canUseBiometrics: canUseBiometrics,
+            hasValidEmail: hasValidAuthEmail,
+            isMounted: state.isMounted,
+            isWorking: state.isWorking,
+            authMode: authMode == .register ? .register : .signIn,
+            hasStoredSecret: canUnlockWithBiometrics
+        )
     }
 
     private var runtime: PrototypeVaultRuntime {
@@ -165,13 +175,14 @@ final class PrototypeVaultStore: ObservableObject {
 
         canUseBiometrics = keychain.canEvaluateBiometrics()
         canUnlockWithBiometrics = keychain.hasStoredSecret(for: selectedIdentity)
+        let biometricState = biometricPanelState
         if canUseBiometrics {
             if canUnlockWithBiometrics {
                 biometricStatusText = "Touch ID ready for \(selectedIdentity.displayName)"
             } else if authMode == .register {
                 biometricStatusText = "Touch ID will be enabled after password registration"
             } else {
-                biometricStatusText = "Touch ID will be saved after password sign-in"
+                biometricStatusText = biometricState.message
             }
         } else {
             biometricStatusText = "Touch ID is not available on this Mac"
@@ -296,7 +307,7 @@ final class PrototypeVaultStore: ObservableObject {
 
         do {
             state = .working("Authenticating")
-            let secret = try keychain.readPassphrase(for: selectedIdentity)
+            let secret = try await keychain.readPassphrase(for: selectedIdentity)
             appendEvent("Authenticated", "Keychain released the vault secret for \(selectedIdentity.displayName).")
             audit.log(.biometricAuth, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: nil)
             _ = await createOrUnlock(passphrase: secret, shouldSaveSecret: false)
@@ -573,7 +584,7 @@ final class PrototypeVaultStore: ObservableObject {
 
         do {
             try keychain.save(passphrase: passphrase, for: selectedIdentity)
-            canUnlockWithBiometrics = true
+            canUnlockWithBiometrics = keychain.hasStoredSecret(for: selectedIdentity)
             biometricStatusText = "Touch ID ready for \(selectedIdentity.displayName)"
             appendEvent("Touch ID enabled", "Future unlocks for \(selectedIdentity.displayName) can use biometric authentication.")
             audit.log(.keychainStore, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)

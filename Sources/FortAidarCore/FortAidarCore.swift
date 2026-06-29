@@ -132,6 +132,82 @@ public struct AuthEmailPolicy: Sendable {
     }
 }
 
+public enum BiometricAuthMode: String, Codable, Equatable, Sendable {
+    case signIn
+    case register
+}
+
+public struct BiometricSignInState: Equatable, Sendable {
+    public let isVisible: Bool
+    public let canRun: Bool
+    public let message: String
+
+    public init(isVisible: Bool, canRun: Bool, message: String) {
+        self.isVisible = isVisible
+        self.canRun = canRun
+        self.message = message
+    }
+}
+
+public struct BiometricSignInPolicy: Sendable {
+    public init() {}
+
+    public func state(
+        canUseBiometrics: Bool,
+        hasValidEmail: Bool,
+        isMounted: Bool,
+        isWorking: Bool,
+        authMode: BiometricAuthMode,
+        hasStoredSecret: Bool
+    ) -> BiometricSignInState {
+        guard canUseBiometrics else {
+            return BiometricSignInState(
+                isVisible: false,
+                canRun: false,
+                message: "Touch ID is not available on this Mac."
+            )
+        }
+
+        guard hasValidEmail else {
+            return BiometricSignInState(
+                isVisible: false,
+                canRun: false,
+                message: "Enter email to use password or Touch ID."
+            )
+        }
+
+        if isMounted {
+            return BiometricSignInState(
+                isVisible: true,
+                canRun: !isWorking,
+                message: "Touch ID can lock this vault."
+            )
+        }
+
+        if authMode == .register {
+            return BiometricSignInState(
+                isVisible: true,
+                canRun: false,
+                message: "Touch ID will be enabled after password registration."
+            )
+        }
+
+        if hasStoredSecret {
+            return BiometricSignInState(
+                isVisible: true,
+                canRun: !isWorking,
+                message: "Touch ID ready for this email."
+            )
+        }
+
+        return BiometricSignInState(
+            isVisible: true,
+            canRun: false,
+            message: "Sign in with password once to enable Touch ID for this email."
+        )
+    }
+}
+
 public struct ResolvedLogicalPath: Equatable, Sendable {
     public let relativePath: String
     public let auditNamespace: String
