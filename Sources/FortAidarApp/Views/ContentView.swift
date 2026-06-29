@@ -137,23 +137,15 @@ private struct HeaderBar: View {
                 .frame(minWidth: 220, idealWidth: 280, maxWidth: 360)
 
                 VStack(spacing: 8) {
-                    if store.canRunBiometricAction {
+                    if store.canShowBiometricButton {
                         Button {
-                            Task { await store.performBiometricVaultAction() }
+                            Task { await store.performBiometricButtonAction() }
                         } label: {
-                            Label(biometricButtonTitle, systemImage: "touchid")
+                            Label(store.biometricButtonTitle, systemImage: "touchid")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                    } else if store.canShowBiometricButton {
-                        Button {
-                            Task { await store.performBiometricVaultAction() }
-                        } label: {
-                            Label(biometricButtonTitle, systemImage: "touchid")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(true)
+                        .disabled(!store.canTapBiometricAction)
                     }
 
                     if store.canRunBiometricAction {
@@ -189,7 +181,7 @@ private struct HeaderBar: View {
             }
 
             HStack(spacing: 10) {
-                Image(systemName: "touchid")
+                Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
                 Text(store.biometricStatusText)
                     .font(.caption)
@@ -314,14 +306,6 @@ private struct HeaderBar: View {
         case .working:
             return "hourglass"
         }
-    }
-
-    private var biometricButtonTitle: String {
-        if store.state.isMounted {
-            return "Touch ID Lock"
-        }
-
-        return "Touch ID"
     }
 
     private var appBuildLabel: String {

@@ -140,11 +140,13 @@ public enum BiometricAuthMode: String, Codable, Equatable, Sendable {
 public struct BiometricSignInState: Equatable, Sendable {
     public let isVisible: Bool
     public let canRun: Bool
+    public let canTap: Bool
     public let message: String
 
-    public init(isVisible: Bool, canRun: Bool, message: String) {
+    public init(isVisible: Bool, canRun: Bool, canTap: Bool, message: String) {
         self.isVisible = isVisible
         self.canRun = canRun
+        self.canTap = canTap
         self.message = message
     }
 }
@@ -164,6 +166,7 @@ public struct BiometricSignInPolicy: Sendable {
             return BiometricSignInState(
                 isVisible: false,
                 canRun: false,
+                canTap: false,
                 message: "Touch ID is not available on this Mac."
             )
         }
@@ -172,6 +175,7 @@ public struct BiometricSignInPolicy: Sendable {
             return BiometricSignInState(
                 isVisible: false,
                 canRun: false,
+                canTap: false,
                 message: "Enter email to use password or Touch ID."
             )
         }
@@ -180,6 +184,7 @@ public struct BiometricSignInPolicy: Sendable {
             return BiometricSignInState(
                 isVisible: true,
                 canRun: !isWorking,
+                canTap: !isWorking,
                 message: "Touch ID can lock this vault."
             )
         }
@@ -188,6 +193,7 @@ public struct BiometricSignInPolicy: Sendable {
             return BiometricSignInState(
                 isVisible: true,
                 canRun: false,
+                canTap: !isWorking,
                 message: "Touch ID will be enabled after password registration."
             )
         }
@@ -196,6 +202,7 @@ public struct BiometricSignInPolicy: Sendable {
             return BiometricSignInState(
                 isVisible: true,
                 canRun: !isWorking,
+                canTap: !isWorking,
                 message: "Touch ID ready for this email."
             )
         }
@@ -203,6 +210,7 @@ public struct BiometricSignInPolicy: Sendable {
         return BiometricSignInState(
             isVisible: true,
             canRun: false,
+            canTap: !isWorking,
             message: "Sign in with password once to enable Touch ID for this email."
         )
     }

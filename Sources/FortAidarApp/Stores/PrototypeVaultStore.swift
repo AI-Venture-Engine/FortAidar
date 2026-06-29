@@ -76,6 +76,27 @@ final class PrototypeVaultStore: ObservableObject {
         biometricPanelState.canRun
     }
 
+    var canTapBiometricAction: Bool {
+        biometricPanelState.canTap
+    }
+
+    var biometricButtonTitle: String {
+        if state.isMounted {
+            return "Touch ID Lock"
+        }
+
+        if canRunBiometricAction {
+            return "Touch ID"
+        }
+
+        switch authMode {
+        case .register:
+            return "Set Up Touch ID"
+        case .signIn:
+            return "Enable Touch ID"
+        }
+    }
+
     var authContextText: String {
         switch authMode {
         case .register:
@@ -288,6 +309,30 @@ final class PrototypeVaultStore: ObservableObject {
         } else {
             await unlockWithBiometrics()
         }
+    }
+
+    func performBiometricButtonAction() async {
+        if canRunBiometricAction {
+            await performBiometricVaultAction()
+            return
+        }
+
+        guard hasValidAuthEmail else {
+            appendEvent("Email required", "Enter your email before using Touch ID.")
+            return
+        }
+
+        if state.isMounted {
+            await refresh()
+            return
+        }
+
+        if authMode == .register {
+            appendEvent("Touch ID setup", "Register with an email and password first. Touch ID will turn on after the vault opens.")
+        } else {
+            appendEvent("Touch ID setup", "Sign in with the password once. Fort Aidar will save this vault for Touch ID after it opens.")
+        }
+        focusPassphraseField()
     }
 
     func unlockWithBiometrics() async {
