@@ -8,6 +8,10 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 3. Add files or folders.
 4. Lock the vault when finished.
 
+In this preview, email is only a local vault selector on this Mac. It is not a
+cloud account and does not provide email-based recovery. Register mode starts
+with a blank email field so another person can create a separate local vault.
+
 ## Current Features
 
 - macOS SwiftUI preview app.
@@ -30,6 +34,7 @@ preview focuses on a local macOS vault with a simple, visible workflow:
 - Preview DMG is available for handoff, but it is not notarized yet.
 - No Google Workspace sign-in yet.
 - No cloud recovery.
+- No email password reset flow yet; keep the vault password safe.
 - MCP is read-only status only; no production agent file access yet.
 - No automatic updater.
 - Current character animation is an embedded preview, not the final Pocket Mode.

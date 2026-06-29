@@ -73,6 +73,8 @@ It also contains a first SwiftUI prototype app:
 
 - one-window macOS interface
 - simple local `Sign in` / `Register` flow keyed by email
+- `Register` starts with an empty email field so a second local user can create
+  a separate vault without seeing the previous user's address
 - email normalization for common Cyrillic/Latin lookalike letters before vault
   lookup
 - create/unlock an encrypted sparsebundle with a password
@@ -91,12 +93,18 @@ preview. It supports `initialize`, `tools/list`, `tools/call`, and a read-only
 `fortaidar.status` tool. Unlocking and file import are still intentionally
 human-controlled in the macOS app.
 
+Email is a local vault selector in this preview, not a cloud account. There is
+no email recovery flow yet: if a user forgets the vault password and it was not
+successfully saved in Keychain, the vault contents cannot be recovered through
+Fort Aidar.
+
 Touch ID support is intentionally simple in this prototype: after a successful
-password registration/sign-in, Fort Aidar stores the vault password in Keychain
-with `biometryCurrentSet` and `ThisDeviceOnly`. Later unlocks can ask Keychain
-to release the stored secret through biometric authentication. First-time
-registration uses a password; Touch ID is deliberately a follow-up convenience
-path in this preview.
+password registration/sign-in, Fort Aidar tries to store the vault password in
+Keychain with biometric access control and `ThisDeviceOnly`. Later unlocks can
+ask Keychain to release the stored secret through Touch ID or the compatible
+device-owner authentication path provided by macOS. First-time registration
+uses a password; Touch ID is deliberately a follow-up convenience path in this
+preview.
 
 ## Run From Source
 
@@ -125,7 +133,7 @@ Email-based local users use isolated vault paths under:
 Usage:
 
 1. Choose `Register` for a first local user, enter an email, and enter a
-   password twice.
+   password twice. The email field is intentionally blank in Register mode.
 2. The vault opens immediately after successful registration.
 3. On later runs, choose `Sign in`, enter the same email, and use the password
    or `Touch ID` when available.

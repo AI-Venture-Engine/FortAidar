@@ -173,6 +173,28 @@ func specVaultIdentityPolicy() {
     expect(agentIdentity.vaultRelativePath == "Vaults/agent-alpha/FortAidar.sparsebundle", "agent identity has isolated vault path")
 }
 
+func specAuthEmailPolicy() {
+    let policy = AuthEmailPolicy()
+
+    expect(
+        policy.initialEmail(rememberedEmail: "akojahmetov@gmail.com", isRegisterMode: false) == "akojahmetov@gmail.com",
+        "sign-in can prefill the last local vault email"
+    )
+    expect(
+        policy.initialEmail(rememberedEmail: "akojahmetov@gmail.com", isRegisterMode: true).isEmpty,
+        "register starts blank so another local user is not shown Aidar's email"
+    )
+
+    let latinIdentity = policy.identity(forEmail: "akojahmetov@gmail.com")
+    let cyrillicLookalikeIdentity = policy.identity(forEmail: "аkojahmetov@gmail.com")
+    expect(latinIdentity?.id == "user-akojahmetov-gmail-com-6b06eef37d", "latin email keeps the known vault id")
+    expect(cyrillicLookalikeIdentity?.id == latinIdentity?.id, "cyrillic lookalike email canonicalizes to the same vault id")
+
+    let anotherIdentity = policy.identity(forEmail: "client@example.com")
+    expect(anotherIdentity != nil, "another valid email creates an identity")
+    expect(anotherIdentity?.id != latinIdentity?.id, "another email creates another local vault id")
+}
+
 try specLogicalPathPolicy()
 specHdiutilCommandPolicy()
 specMCPContract()
@@ -181,5 +203,6 @@ specAutoLockPolicy()
 specAuditEvents()
 try specAuditCodec()
 specVaultIdentityPolicy()
+specAuthEmailPolicy()
 
 print("FortAidarCoreSpec passed")

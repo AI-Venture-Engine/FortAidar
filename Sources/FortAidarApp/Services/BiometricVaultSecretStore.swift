@@ -27,16 +27,24 @@ struct BiometricVaultSecretStore: Sendable {
     }
 
     func save(passphrase: String, for identity: VaultIdentity) throws {
+        delete(for: identity)
+
+        do {
+            try add(passphrase: passphrase, for: identity, flags: .biometryCurrentSet)
+        } catch {
+            try add(passphrase: passphrase, for: identity, flags: .userPresence)
+        }
+    }
+
+    private func add(passphrase: String, for identity: VaultIdentity, flags: SecAccessControlCreateFlags) throws {
         guard let access = SecAccessControlCreateWithFlags(
             nil,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryCurrentSet,
+            flags,
             nil
         ) else {
             throw KeychainSecretError.accessControlUnavailable
         }
-
-        delete(for: identity)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

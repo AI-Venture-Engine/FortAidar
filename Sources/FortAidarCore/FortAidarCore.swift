@@ -28,6 +28,110 @@ public struct VaultIdentity: Equatable, Codable, Identifiable, Sendable {
     }
 }
 
+public struct AuthEmailPolicy: Sendable {
+    public init() {}
+
+    public func initialEmail(rememberedEmail: String?, isRegisterMode: Bool) -> String {
+        guard !isRegisterMode else { return "" }
+        return canonicalize(rememberedEmail ?? "")
+    }
+
+    public func identity(forEmail value: String) -> VaultIdentity? {
+        let email = canonicalize(value)
+        guard isValid(email), let id = identityID(forEmail: email) else {
+            return nil
+        }
+
+        return VaultIdentity(
+            id: id,
+            displayName: email,
+            handle: email,
+            kind: .person
+        )
+    }
+
+    public func identityID(forEmail value: String) -> String? {
+        let email = canonicalize(value)
+        guard isValid(email) else {
+            return nil
+        }
+
+        let slug = slugComponent(from: email)
+        let digest = SHA256.hash(data: Data(email.utf8))
+        let shortHash = digest.map { String(format: "%02x", $0) }.joined().prefix(10)
+        return "user-\(slug)-\(shortHash)"
+    }
+
+    public func canonicalize(_ value: String) -> String {
+        let homographMap: [Unicode.Scalar: String] = [
+            "а": "a", "А": "a",
+            "е": "e", "Е": "e",
+            "о": "o", "О": "o",
+            "р": "p", "Р": "p",
+            "с": "c", "С": "c",
+            "у": "y", "У": "y",
+            "х": "x", "Х": "x",
+            "к": "k", "К": "k",
+            "м": "m", "М": "m",
+            "т": "t", "Т": "t",
+            "в": "b", "В": "b",
+            "н": "h", "Н": "h",
+            "і": "i", "І": "i",
+            "ї": "i", "Ї": "i",
+            "ј": "j", "Ј": "j",
+            "ѕ": "s", "Ѕ": "s"
+        ]
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        var normalized = ""
+        for scalar in trimmed.unicodeScalars {
+            if let replacement = homographMap[scalar] {
+                normalized.append(replacement)
+            } else {
+                normalized.append(String(scalar))
+            }
+        }
+        return normalized.lowercased()
+    }
+
+    public func isValid(_ value: String) -> Bool {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._%+-@")
+        guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return false
+        }
+
+        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              !parts[0].isEmpty,
+              !parts[1].isEmpty,
+              parts[1].contains(".")
+        else {
+            return false
+        }
+
+        let domainLabels = parts[1].split(separator: ".", omittingEmptySubsequences: false)
+        return domainLabels.allSatisfy { !$0.isEmpty }
+    }
+
+    private func slugComponent(from value: String) -> String {
+        let folded = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+
+        var result = ""
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                result.append(String(scalar))
+            } else if !result.hasSuffix("-") {
+                result.append("-")
+            }
+        }
+
+        let trimmed = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty ? "email" : trimmed
+    }
+}
+
 public struct ResolvedLogicalPath: Equatable, Sendable {
     public let relativePath: String
     public let auditNamespace: String

@@ -91,17 +91,34 @@ private struct HeaderBar: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    TextField("name@example.com", text: $store.ownerContact)
-                        .textFieldStyle(.roundedBorder)
-                        .controlSize(.small)
-                    .disabled(store.state.isMounted || store.state.isWorking)
+                    HStack(spacing: 6) {
+                        TextField("name@example.com", text: $store.ownerContact)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .disabled(store.state.isMounted || store.state.isWorking)
+
+                        Button {
+                            store.clearAuthEmailForNewLocalUser()
+                        } label: {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(store.state.isMounted || store.state.isWorking)
+                        .help("Use another email / new local vault")
+                    }
 
                     Text(store.ownerSummaryText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    Text(store.authContextText)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
                 }
-                .frame(width: 230, alignment: .leading)
+                .frame(width: 250, alignment: .leading)
 
                 StatusPill(store: store)
                     .frame(width: 200, alignment: .leading)
@@ -120,7 +137,7 @@ private struct HeaderBar: View {
                 .frame(minWidth: 220, idealWidth: 280, maxWidth: 360)
 
                 VStack(spacing: 8) {
-                    if store.canShowBiometricButton {
+                    if store.canRunBiometricAction {
                         Button {
                             Task { await store.performBiometricVaultAction() }
                         } label: {
@@ -128,10 +145,18 @@ private struct HeaderBar: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(store.state.isWorking)
+                    } else if store.canShowBiometricButton {
+                        Button {
+                            Task { await store.performBiometricVaultAction() }
+                        } label: {
+                            Label(biometricButtonTitle, systemImage: "touchid")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(true)
                     }
 
-                    if store.canShowBiometricButton {
+                    if store.canRunBiometricAction {
                         Button {
                             Task { await store.performPrimaryVaultAction() }
                         } label: {

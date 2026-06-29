@@ -17,11 +17,15 @@ partners who understand the current limitations.
   Keychain with biometric access control.
 - Touch ID unlock asks Keychain to release the stored vault secret for the
   selected identity.
+- The email field selects a local vault identity on this Mac. It is not a
+  remote account or recovery channel in this preview.
 
 ## Important Limits
 
 - This preview is not notarized yet.
 - This preview does not provide cloud recovery.
+- This preview does not provide email-based password reset. A different email
+  creates or selects a different local vault.
 - If a passphrase is lost and it was not saved in Keychain, the local vault
   cannot be reset without losing access to its contents.
 - When the vault is mounted, files are visible as plaintext to processes running

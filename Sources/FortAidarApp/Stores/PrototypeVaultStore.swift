@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import Foundation
 import FortAidarCore
 import SwiftUI
@@ -29,6 +28,7 @@ final class PrototypeVaultStore: ObservableObject {
     @Published var autoLockStatusText = "Auto-lock starts after unlock"
     let vaultDogBridge = VaultDogBridge()
 
+    private let authEmailPolicy = AuthEmailPolicy()
     private let keychain = BiometricVaultSecretStore()
     private let audit = AuditLogWriter()
     private let autoLockPolicy = AutoLockPolicy(intervalSeconds: 600)
@@ -40,16 +40,20 @@ final class PrototypeVaultStore: ObservableObject {
     init() {
         UserDefaults.standard.removeObject(forKey: Self.ownerNameDefaultsKey)
         ownerName = ""
-        ownerContact = UserDefaults.standard.string(forKey: Self.ownerContactDefaultsKey) ?? ""
         let savedMode = UserDefaults.standard.string(forKey: Self.authModeDefaultsKey)
-        authMode = savedMode.flatMap(AuthMode.init(rawValue:)) ?? .signIn
+        let initialMode = savedMode.flatMap(AuthMode.init(rawValue:)) ?? .signIn
+        authMode = initialMode
+        ownerContact = authEmailPolicy.initialEmail(
+            rememberedEmail: UserDefaults.standard.string(forKey: Self.ownerContactDefaultsKey),
+            isRegisterMode: initialMode == .register
+        )
     }
 
     var selectedIdentity: VaultIdentity {
-        VaultIdentity(
-            id: authIdentityID,
-            displayName: ownerDisplayName,
-            handle: ownerHandle,
+        authEmailPolicy.identity(forEmail: ownerContact) ?? VaultIdentity(
+            id: "email-required",
+            displayName: "Email required",
+            handle: "email-required",
             kind: .person
         )
     }
@@ -64,32 +68,30 @@ final class PrototypeVaultStore: ObservableObject {
     }
 
     var canShowBiometricButton: Bool {
-        guard canUseBiometrics, hasAuthEmail else { return false }
+        canUseBiometrics && hasValidAuthEmail
+    }
+
+    var canRunBiometricAction: Bool {
+        guard canUseBiometrics, hasValidAuthEmail, !state.isWorking else { return false }
         if state.isMounted { return true }
         return authMode == .signIn && canUnlockWithBiometrics
     }
 
-    private var ownerDisplayName: String {
-        return normalizedAuthEmail.isEmpty ? "Email required" : normalizedAuthEmail
-    }
-
-    private var ownerHandle: String {
-        normalizedAuthEmail.isEmpty ? "email-required" : normalizedAuthEmail
+    var authContextText: String {
+        switch authMode {
+        case .register:
+            return "Register creates a separate local vault on this Mac. Email is a vault selector, not cloud recovery."
+        case .signIn:
+            return "Sign in opens the local vault for this email on this Mac. Recovery by email is not in this preview."
+        }
     }
 
     private var normalizedAuthEmail: String {
-        canonicalizeEmailInput(ownerContact)
+        authEmailPolicy.canonicalize(ownerContact)
     }
 
-    private var authIdentityID: String {
-        guard !normalizedAuthEmail.isEmpty else {
-            return "email-required"
-        }
-
-        let slug = slugComponent(from: normalizedAuthEmail)
-        let digest = SHA256.hash(data: Data(normalizedAuthEmail.utf8))
-        let shortHash = digest.map { String(format: "%02x", $0) }.joined().prefix(10)
-        return "user-\(slug)-\(shortHash)"
+    private var hasValidAuthEmail: Bool {
+        authEmailPolicy.isValid(normalizedAuthEmail)
     }
 
     private var runtime: PrototypeVaultRuntime {
@@ -152,6 +154,15 @@ final class PrototypeVaultStore: ObservableObject {
             return
         }
 
+        guard hasValidAuthEmail else {
+            canUseBiometrics = keychain.canEvaluateBiometrics()
+            canUnlockWithBiometrics = false
+            biometricStatusText = "Check email before using password or Touch ID"
+            state = .missing
+            items = []
+            return
+        }
+
         canUseBiometrics = keychain.canEvaluateBiometrics()
         canUnlockWithBiometrics = keychain.hasStoredSecret(for: selectedIdentity)
         if canUseBiometrics {
@@ -178,6 +189,20 @@ final class PrototypeVaultStore: ObservableObject {
 
     func focusPassphraseField() {
         passphraseFieldToken = UUID()
+    }
+
+    func clearAuthEmailForNewLocalUser() {
+        guard !state.isMounted, !state.isWorking else { return }
+        authMode = .register
+        ownerContact = ""
+        passphrase = ""
+        passphraseConfirmation = ""
+        items = []
+        mountPoint = nil
+        canUnlockWithBiometrics = false
+        cancelAutoLock(resetStatus: true)
+        appendEvent("New local vault", "Enter another email and password to create a separate local vault.")
+        Task { await refresh() }
     }
 
     func createOrUnlock() async {
@@ -367,6 +392,7 @@ final class PrototypeVaultStore: ObservableObject {
             registerVaultActivity()
             appendEvent("Unlocked", "\(selectedIdentity.displayName) vault mounted for this session.")
             audit.log(.unlock, outcome: .allow, requester: requester, target: target, mountState: .mounted, sessionID: sessionID)
+            rememberCurrentAuthEmail()
 
             if shouldSaveSecret {
                 saveSecretForBiometrics(enteredPassphrase)
@@ -553,8 +579,8 @@ final class PrototypeVaultStore: ObservableObject {
             audit.log(.keychainStore, outcome: .allow, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)
         } catch {
             canUnlockWithBiometrics = false
-            biometricStatusText = "Touch ID setup failed"
-            appendEvent("Touch ID setup failed", error.localizedDescription)
+            biometricStatusText = "Touch ID setup failed; password sign-in still works"
+            appendEvent("Touch ID setup failed", "\(error.localizedDescription) Password sign-in still works.")
             audit.log(.keychainStore, outcome: .error, requester: selectedIdentity.id, target: selectedIdentity.keychainAccount, mountState: auditMountState, sessionID: auditSessionID)
         }
     }
@@ -567,7 +593,6 @@ final class PrototypeVaultStore: ObservableObject {
     }
 
     private func handleAuthIdentityInputChanged() {
-        persistOwnerIdentity()
         guard !state.isMounted else { return }
         passphrase = ""
         passphraseConfirmation = ""
@@ -582,12 +607,36 @@ final class PrototypeVaultStore: ObservableObject {
         guard !state.isMounted else { return }
         passphrase = ""
         passphraseConfirmation = ""
+        items = []
+        mountPoint = nil
+        cancelAutoLock(resetStatus: true)
+
+        switch authMode {
+        case .register:
+            if !ownerContact.isEmpty {
+                ownerContact = ""
+            }
+        case .signIn:
+            if normalizedAuthEmail.isEmpty {
+                ownerContact = authEmailPolicy.initialEmail(
+                    rememberedEmail: UserDefaults.standard.string(forKey: Self.ownerContactDefaultsKey),
+                    isRegisterMode: false
+                )
+            }
+        }
+
         Task { await refresh() }
     }
 
     private func persistOwnerIdentity() {
         UserDefaults.standard.removeObject(forKey: Self.ownerNameDefaultsKey)
-        UserDefaults.standard.set(normalizedAuthEmail, forKey: Self.ownerContactDefaultsKey)
+    }
+
+    private func rememberCurrentAuthEmail() {
+        let email = normalizedAuthEmail
+        guard authEmailPolicy.isValid(email) else { return }
+        UserDefaults.standard.removeObject(forKey: Self.ownerNameDefaultsKey)
+        UserDefaults.standard.set(email, forKey: Self.ownerContactDefaultsKey)
     }
 
     private func validateEmailForAuth() -> Bool {
@@ -598,82 +647,13 @@ final class PrototypeVaultStore: ObservableObject {
             return false
         }
 
-        guard isValidAuthEmail(email) else {
+        guard authEmailPolicy.isValid(email) else {
             appendEvent("Check email", "Use a normal email with Latin letters, numbers, dots, dashes, underscores, or plus signs.")
             state = .missing
             return false
         }
 
         return true
-    }
-
-    private func canonicalizeEmailInput(_ value: String) -> String {
-        let homographMap: [Unicode.Scalar: String] = [
-            "а": "a", "А": "a",
-            "е": "e", "Е": "e",
-            "о": "o", "О": "o",
-            "р": "p", "Р": "p",
-            "с": "c", "С": "c",
-            "у": "y", "У": "y",
-            "х": "x", "Х": "x",
-            "к": "k", "К": "k",
-            "м": "m", "М": "m",
-            "т": "t", "Т": "t",
-            "в": "b", "В": "b",
-            "н": "h", "Н": "h",
-            "і": "i", "І": "i",
-            "ї": "i", "Ї": "i",
-            "ј": "j", "Ј": "j",
-            "ѕ": "s", "Ѕ": "s"
-        ]
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        var normalized = ""
-        for scalar in trimmed.unicodeScalars {
-            if let replacement = homographMap[scalar] {
-                normalized.append(replacement)
-            } else {
-                normalized.append(String(scalar))
-            }
-        }
-        return normalized.lowercased()
-    }
-
-    private func isValidAuthEmail(_ value: String) -> Bool {
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._%+-@")
-        guard value.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-            return false
-        }
-
-        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
-        guard parts.count == 2,
-              !parts[0].isEmpty,
-              !parts[1].isEmpty,
-              parts[1].contains(".")
-        else {
-            return false
-        }
-
-        let domainLabels = parts[1].split(separator: ".", omittingEmptySubsequences: false)
-        return domainLabels.allSatisfy { !$0.isEmpty }
-    }
-
-    private func slugComponent(from value: String) -> String {
-        let folded = value
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            .lowercased()
-
-        var result = ""
-        for scalar in folded.unicodeScalars {
-            if CharacterSet.alphanumerics.contains(scalar) {
-                result.append(String(scalar))
-            } else if !result.hasSuffix("-") {
-                result.append("-")
-            }
-        }
-
-        let trimmed = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return trimmed.isEmpty ? "email" : trimmed
     }
 
     private func friendlyUnlockError(from error: Error) -> String {
