@@ -31,8 +31,14 @@ with a blank email field so another person can create a separate local vault.
 
 ## Known Preview Gaps
 
-- No Developer ID notarization yet.
-- Preview DMG is available for handoff, but it is not notarized yet.
+- Default preview packages are ad-hoc signed and are not for public release.
+- A distribution build requires Developer ID signing, Hardened Runtime,
+  notarization, stapling, and Gatekeeper acceptance; the packaging script stops
+  if any of these gates fails.
+- The DMG now includes an `Applications` shortcut and tells users to copy the
+  app before launching it.
+- The app is built as Universal 2 (`arm64` + `x86_64`) and still requires
+  macOS 14 or newer.
 - No Google Workspace sign-in yet.
 - No cloud recovery.
 - No email password reset flow yet; keep the vault password safe.
