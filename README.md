@@ -24,15 +24,14 @@ You can download the current preview build from:
 
 <https://github.com/AI-Venture-Engine/FortAidar/releases/tag/v0.1.0-preview>
 
-This preview app is ad-hoc signed, but it is not signed with Apple Developer ID
-and is not notarized yet. On another Mac, Gatekeeper may warn that the app is
-from an unidentified developer. That is expected for this beta build; users may
-need to approve the first launch manually in macOS.
+Public builds must be signed with Apple Developer ID, use Hardened Runtime, and
+be notarized and stapled before release. The default local preview mode remains
+ad-hoc signed for development only and must not be published as a trusted
+installer.
 
-The local packaging script now produces both a `.zip` package and a preview
-`.dmg`. The DMG is easier for partners to open and inspect, but it is still
-only a preview artifact until Developer ID signing and notarization are in
-place.
+The packaging script produces a Universal 2 `.app`, ZIP, and DMG. The DMG shows
+only `Fort Aidar.app`, an `Applications` shortcut, and a short install guide so
+the user installs the app instead of running it from the mounted image.
 
 Before a wider public release, the intended distribution steps are:
 
@@ -43,8 +42,8 @@ Before a wider public release, the intended distribution steps are:
 5. A notarized `.dmg` installer.
 6. A short onboarding guide for partner and public testers.
 
-For now, treat this build as a test vault preview. Do not store the only copy of
-important documents in it.
+For now, treat locally generated preview-channel builds as test artifacts. Do
+not store the only copy of important documents in them.
 
 ## Security framing
 
@@ -167,12 +166,25 @@ For early partner handoff, build and package the app from a local checkout:
 ./script/package_preview.sh
 ```
 
-The package is written under `release/`. It includes the staged `.app`,
-preview notes, security notes, `BUILD_INFO.txt`, a `.zip`, a `.dmg`, and
-SHA-256 checksum files. The app window and DMG volume include the build stamp so
-parallel preview builds can be distinguished. Until Developer ID signing and
-notarization are configured, macOS may warn that the app is from an unidentified
-developer even when partners use the DMG.
+The default package is written under `release/` as an explicitly ad-hoc signed
+preview. It includes a Universal 2 app, ZIP, DMG, and SHA-256 files. The DMG
+contains an `Applications` shortcut and an install guide.
+
+For a distributable build, first store notary credentials in Keychain with
+`notarytool store-credentials`, then provide the Developer ID identity and
+Keychain profile without placing secrets in the repository:
+
+```sh
+FORTAIDAR_PACKAGE_CHANNEL=distribution \
+FORTAIDAR_SIGNING_IDENTITY='Developer ID Application: Example Name (TEAMID)' \
+FORTAIDAR_NOTARY_PROFILE='FortAidar-Notary' \
+./script/package_preview.sh
+```
+
+Distribution mode fails closed unless the app is signed with Hardened Runtime
+and a secure timestamp, notarization returns `Accepted`, the ticket is stapled,
+and Gatekeeper accepts the DMG. Do not upload preview-channel artifacts as a
+public release.
 
 ## Verification
 
@@ -193,4 +205,5 @@ toolchain test modules are available again.
 - Google Workspace / OIDC sign-in for human identity.
 - Expand MCP server from read-only status to reviewed agent access flows.
 - Pocket Mode and Fort Artifact companion interactions.
-- Developer ID signing, hardened runtime, and notarization.
+- Automatic release publication only after the signed/notarized distribution
+  gate passes.
